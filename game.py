@@ -365,6 +365,7 @@ def create_crew_pool() -> List[CrewMember]:
 def create_missions() -> List[Mission]:
     """Create all available missions"""
     return [
+        # Starter missions
         Mission(
             id="tutorial",
             name="First Wheels",
@@ -385,20 +386,143 @@ def create_missions() -> List[Mission]:
             required_mission="recruit_crew",
             payout=5000
         ),
+        
+        # Mid-tier missions
+        Mission(
+            id="bank_robbery",
+            name="Bank Robbery",
+            description="Hit a downtown bank. High risk, high reward.",
+            required_mission="mini_heist",
+            payout=30000
+        ),
+        Mission(
+            id="jewelry_store",
+            name="Diamond District",
+            description="Smash and grab at a high-end jewelry store.",
+            required_mission="mini_heist",
+            payout=25000
+        ),
+        Mission(
+            id="armory_heist",
+            name="Armory Raid",
+            description="Steal military-grade weapons from the armory.",
+            required_mission="bank_robbery",
+            payout=40000
+        ),
+        Mission(
+            id="drug_deal",
+            name="Drug Deal",
+            description="Intercept a rival gang's drug shipment.",
+            required_mission="jewelry_store",
+            payout=20000
+        ),
+        Mission(
+            id="kidnapping",
+            name="Kidnapping",
+            description="Kidnap a VIP and collect ransom.",
+            required_mission="bank_robbery",
+            payout=50000
+        ),
+        Mission(
+            id="gang_war",
+            name="Gang War",
+            description="Defend your territory from rival gangs.",
+            required_mission="drug_deal",
+            payout=30000
+        ),
+        Mission(
+            id="corrupt_cop",
+            name="Corrupt Cop",
+            description="Deal with a dirty cop who has dirt on you.",
+            required_mission="gang_war",
+            payout=15000
+        ),
+        
+        # Advanced missions
+        Mission(
+            id="escape_prison",
+            name="Prison Break",
+            description="Break a crew member out of prison.",
+            required_mission="corrupt_cop",
+            payout=20000
+        ),
+        Mission(
+            id="car_theft_ring",
+            name="Car Theft Ring",
+            description="Steal luxury cars for export.",
+            required_mission="armory_heist",
+            payout=40000
+        ),
+        Mission(
+            id="smuggling",
+            name="Smuggling Run",
+            description="Transport contraband across the city.",
+            required_mission="car_theft_ring",
+            payout=45000
+        ),
+        Mission(
+            id="casino_heist",
+            name="Casino Heist",
+            description="Ocean's Eleven style casino robbery.",
+            required_mission="smuggling",
+            payout=100000
+        ),
+        Mission(
+            id="art_gallery",
+            name="Art Gallery",
+            description="Steal priceless paintings from a gallery.",
+            required_mission="casino_heist",
+            payout=60000
+        ),
+        
+        # Epic finales
         Mission(
             id="prep_arcadia",
             name="Arcadia Prep",
             description="Scout the Arcadia vault and gather intel.",
-            required_mission="mini_heist",
+            required_mission="art_gallery",
             payout=2000
         ),
         Mission(
             id="arcadia_heist",
             name="The Arcadia Job",
-            description="The big one. Rob the Arcadia vault.",
+            description="Rob the legendary Arcadia vault.",
             required_mission="prep_arcadia",
-            payout=100000
+            payout=150000
+        ),
+        Mission(
+            id="final_showdown",
+            name="Final Showdown",
+            description="The ultimate heist. Everything is on the line.",
+            required_mission="arcadia_heist",
+            payout=200000
         )
+    ]
+
+def create_city_zones() -> List[CityZone]:
+    """Create city map zones"""
+    return [
+        CityZone("Harbor", 2, 2, "H", Color.BLUE, [
+            "mini_heist", "smuggling", "drug_deal"
+        ]),
+        CityZone("Downtown", 5, 5, "D", Color.YELLOW, [
+            "tutorial", "bank_robbery", "jewelry_store", "arcadia_heist"
+        ]),
+        CityZone("Suburbs", 8, 3, "S", Color.GREEN, [
+            "recruit_crew", "kidnapping", "car_theft_ring"
+        ]),
+        CityZone("Industrial", 7, 8, "I", Color.RED, [
+            "prep_arcadia", "armory_heist", "gang_war"
+        ]),
+        CityZone("Uptown", 10, 6, "U", Color.CYAN, [
+            "casino_heist", "art_gallery", "corrupt_cop"
+        ]),
+        CityZone("Prison", 1, 9, "P", Color.MAGENTA, [
+            "escape_prison"
+        ]),
+        CityZone("Finale", 11, 11, "F", Color.BRIGHT_RED, [
+            "final_showdown"
+        ])
     ]
 
 def create_city_zones() -> List[CityZone]:
@@ -695,6 +819,1120 @@ def minigame_hacking(state: GameState, complexity: int = 3) -> bool:
 
     finally:
         show_cursor()
+
+
+
+# === ADDITIONAL MINIGAMES ===
+
+def minigame_shooting(state: GameState, targets: int = 10, time_limit: int = 20) -> bool:
+    """Shooting minigame - hit targets"""
+    height, width = get_terminal_size()
+    player = state.players[state.current_player]
+    damage_bonus = player.damage_bonus if player.role == 'Gunner' else 0
+    
+    hits = 0
+    misses = 0
+    start_time = time.time()
+    target_x = random.randint(10, 60)
+    
+    hide_cursor()
+    try:
+        while hits < targets and time.time() - start_time < time_limit:
+            clear_screen()
+            elapsed = time.time() - start_time
+            remaining = time_limit - int(elapsed)
+            
+            move_cursor(1, 1)
+            print(colorize(f"SHOOTING RANGE | Hits: {hits}/{targets} | Time: {remaining}s | Accuracy: {hits}/{hits+misses if hits+misses > 0 else 1}", Color.BRIGHT_RED))
+            
+            # Draw target
+            target_row = height // 2
+            move_cursor(target_row - 1, target_x)
+            print(colorize("  ○  ", Color.RED))
+            move_cursor(target_row, target_x)
+            print(colorize(" /|\\ ", Color.RED))
+            move_cursor(target_row + 1, target_x)
+            print(colorize(" / \\ ", Color.RED))
+            
+            # Crosshair
+            move_cursor(height // 2, width // 2)
+            print(colorize("+", Color.BRIGHT_YELLOW))
+            
+            move_cursor(height - 1, 1)
+            print(colorize("SPACE=Shoot | ESC=Abort", Color.DIM))
+            
+            sys.stdout.flush()
+            
+            key = read_key_blocking(timeout=0.1)
+            if key == ' ':
+                # Check hit
+                if abs((width // 2) - (target_x + 2)) < 3:
+                    hits += 1
+                    target_x = random.randint(10, width - 10)
+                else:
+                    misses += 1
+            elif key == 'ESC':
+                return False
+                
+        return hits >= targets
+    finally:
+        show_cursor()
+
+def minigame_stealth(state: GameState, guards: int = 5, duration: int = 30) -> bool:
+    """Stealth minigame - avoid guards"""
+    height, width = get_terminal_size()
+    
+    player_x, player_y = width // 2, height - 3
+    guard_positions = [(random.randint(5, width-5), random.randint(5, height-5)) for _ in range(guards)]
+    detected = False
+    start_time = time.time()
+    
+    hide_cursor()
+    try:
+        while time.time() - start_time < duration and not detected:
+            clear_screen()
+            elapsed = time.time() - start_time
+            remaining = duration - int(elapsed)
+            
+            move_cursor(1, 1)
+            print(colorize(f"STEALTH MODE | Time: {remaining}s | Guards: {guards}", Color.GREEN))
+            
+            # Draw guards (move randomly)
+            for i, (gx, gy) in enumerate(guard_positions):
+                if random.random() < 0.3:
+                    guard_positions[i] = (gx + random.randint(-1, 1), gy + random.randint(-1, 1))
+                    guard_positions[i] = (max(3, min(width-3, guard_positions[i][0])), 
+                                        max(3, min(height-3, guard_positions[i][1])))
+                
+                move_cursor(guard_positions[i][1], guard_positions[i][0])
+                print(colorize("G", Color.RED))
+                
+                # Check detection
+                dist = abs(player_x - guard_positions[i][0]) + abs(player_y - guard_positions[i][1])
+                if dist < 3:
+                    detected = True
+            
+            # Draw player
+            move_cursor(player_y, player_x)
+            print(colorize("@", Color.BRIGHT_GREEN))
+            
+            # Draw exit
+            exit_x, exit_y = width - 5, 3
+            move_cursor(exit_y, exit_x)
+            print(colorize("EXIT", Color.BRIGHT_CYAN))
+            
+            # Check win
+            if abs(player_x - exit_x) < 3 and abs(player_y - exit_y) < 2:
+                return True
+            
+            move_cursor(height - 1, 1)
+            print(colorize("WASD=Move | Stay quiet!", Color.DIM))
+            sys.stdout.flush()
+            
+            key = read_key_blocking(timeout=0.1)
+            if key == 'W' and player_y > 3:
+                player_y -= 1
+            elif key == 'S' and player_y < height - 2:
+                player_y += 1
+            elif key == 'A' and player_x > 3:
+                player_x -= 1
+            elif key == 'D' and player_x < width - 3:
+                player_x += 1
+            elif key == 'ESC':
+                return False
+                
+        return not detected
+    finally:
+        show_cursor()
+
+def minigame_safecracking(state: GameState, difficulty: int = 3) -> bool:
+    """Safe cracking - find the combination"""
+    height, width = get_terminal_size()
+    
+    combination = [random.randint(0, 9) for _ in range(difficulty)]
+    current = [0] * difficulty
+    position = 0
+    attempts = 10
+    
+    hide_cursor()
+    try:
+        while attempts > 0:
+            clear_screen()
+            
+            move_cursor(height // 2 - 5, 1)
+            lines = [
+                "",
+                colorize("=== SAFE CRACKING ===", Color.BRIGHT_YELLOW),
+                "",
+                "Find the combination!",
+                "",
+                f"Attempts left: {colorize(str(attempts), Color.RED)}",
+                "",
+                "Combination: " + " ".join([
+                    colorize(f"[{current[i]}]", Color.BRIGHT_YELLOW if i == position else Color.WHITE) 
+                    for i in range(difficulty)
+                ]),
+                "",
+                colorize("W/S=Change digit | A/D=Move | ENTER=Try | ESC=Abort", Color.DIM)
+            ]
+            draw_panel(height // 2 - 5, lines, center=True)
+            
+            key = wait_for_key(['W', 'S', 'A', 'D', 'ENTER', 'ESC'], timeout=30)
+            
+            if key == 'W':
+                current[position] = (current[position] + 1) % 10
+            elif key == 'S':
+                current[position] = (current[position] - 1) % 10
+            elif key == 'A' and position > 0:
+                position -= 1
+            elif key == 'D' and position < difficulty - 1:
+                position += 1
+            elif key == 'ENTER':
+                if current == combination:
+                    animate_transition("SAFE OPENED!")
+                    return True
+                else:
+                    attempts -= 1
+                    animate_transition(f"Wrong! {attempts} attempts left")
+            elif key == 'ESC':
+                return False
+                
+        return False
+    finally:
+        show_cursor()
+
+def minigame_lockpicking(state: GameState) -> bool:
+    """Lockpicking - time the pins"""
+    height, width = get_terminal_size()
+    
+    pins = 4
+    current_pin = 0
+    pin_positions = [random.uniform(0.3, 0.7) for _ in range(pins)]
+    
+    hide_cursor()
+    try:
+        while current_pin < pins:
+            clear_screen()
+            
+            move_cursor(height // 2 - 5, 1)
+            lines = [
+                "",
+                colorize("=== LOCKPICKING ===", Color.BRIGHT_CYAN),
+                "",
+                f"Pin {current_pin + 1} / {pins}",
+                ""
+            ]
+            draw_panel(height // 2 - 5, lines, center=True)
+            
+            # Animated pin
+            start_anim = time.time()
+            while time.time() - start_anim < 3:
+                progress = (time.time() - start_anim) / 3.0
+                bar_width = 40
+                bar_pos = int(progress * bar_width)
+                target_pos = int(pin_positions[current_pin] * bar_width)
+                
+                move_cursor(height // 2, (width - bar_width) // 2)
+                bar = "[" + "=" * bar_pos + " " * (bar_width - bar_pos) + "]"
+                print(bar)
+                
+                move_cursor(height // 2 + 1, (width - bar_width) // 2 + target_pos)
+                print(colorize("v", Color.GREEN))
+                
+                move_cursor(height - 1, 1)
+                print(colorize("Press SPACE when aligned!", Color.YELLOW))
+                sys.stdout.flush()
+                
+                key = read_key_blocking(timeout=0.05)
+                if key == ' ':
+                    if abs(progress - pin_positions[current_pin]) < 0.1:
+                        current_pin += 1
+                        animate_transition("Pin set!")
+                        break
+                    else:
+                        animate_transition("Missed!")
+                        return False
+                elif key == 'ESC':
+                    return False
+                    
+            if current_pin < pins and time.time() - start_anim >= 3:
+                animate_transition("Too slow!")
+                return False
+                
+        animate_transition("Lock picked!")
+        return True
+    finally:
+        show_cursor()
+
+
+def minigame_chase_foot(state: GameState, duration: int = 20) -> bool:
+    """Foot chase minigame"""
+    height, width = get_terminal_size()
+    
+    player_pos = 0
+    cop_pos = -10
+    stamina = 100
+    
+    hide_cursor()
+    start_time = time.time()
+    try:
+        while time.time() - start_time < duration and stamina > 0:
+            clear_screen()
+            elapsed = time.time() - start_time
+            remaining = duration - int(elapsed)
+            
+            move_cursor(1, 1)
+            print(colorize(f"FOOT CHASE | Distance: {player_pos - cop_pos} | Stamina: {'█' * (stamina // 10)} | Time: {remaining}s", Color.BRIGHT_YELLOW))
+            
+            # Draw chase
+            chase_row = height // 2
+            track_width = 60
+            player_x = min(track_width - 5, player_pos % track_width)
+            cop_x = max(0, cop_pos % track_width)
+            
+            move_cursor(chase_row, 5 + player_x)
+            print(colorize("@", Color.BRIGHT_GREEN))
+            move_cursor(chase_row, 5 + cop_x)
+            print(colorize("P", Color.BRIGHT_RED))
+            
+            move_cursor(height - 1, 1)
+            print(colorize("SPACE=Sprint | Keep running!", Color.DIM))
+            sys.stdout.flush()
+            
+            key = read_key_blocking(timeout=0.1)
+            if key == ' ' and stamina > 0:
+                player_pos += 3
+                stamina -= 2
+            else:
+                player_pos += 1
+                if stamina < 100:
+                    stamina += 1
+            
+            cop_pos += 2
+            
+            if cop_pos >= player_pos:
+                return False
+                
+        return player_pos - cop_pos > 10
+    finally:
+        show_cursor()
+
+def minigame_negotiation(state: GameState, difficulty: int = 3) -> bool:
+    """Negotiation with timed responses"""
+    height, width = get_terminal_size()
+    
+    trust = 50
+    responses = [
+        ("Threaten", -20, 10),
+        ("Bribe", 15, -5),
+        ("Reason", 10, 5),
+        ("Intimidate", -10, 20),
+    ]
+    
+    for round_num in range(difficulty):
+        clear_screen()
+        
+        situation = random.choice([
+            "They're getting nervous...",
+            "They demand more money!",
+            "They're reconsidering the deal...",
+            "They want assurances..."
+        ])
+        
+        lines = [
+            "",
+            colorize(f"=== NEGOTIATION Round {round_num + 1}/{difficulty} ===", Color.BRIGHT_CYAN),
+            "",
+            situation,
+            "",
+            f"Trust Level: {colorize('█' * (trust // 10), Color.GREEN if trust > 50 else Color.RED)}",
+            "",
+        ]
+        
+        for i, (option, trust_change, _) in enumerate(responses, 1):
+            lines.append(f"{i}) {option} ({'+' if trust_change > 0 else ''}{trust_change} trust)")
+        
+        lines.append("")
+        lines.append(colorize("Choose wisely! (5s)", Color.YELLOW))
+        
+        draw_panel(5, lines, center=True)
+        
+        choice = wait_for_key(['1', '2', '3', '4'], timeout=5.0)
+        
+        if not choice or choice not in ['1', '2', '3', '4']:
+            trust -= 20
+            animate_transition("You hesitated!")
+        else:
+            idx = int(choice) - 1
+            trust += responses[idx][1]
+            
+        if trust <= 0:
+            animate_transition("Negotiation failed!")
+            return False
+        elif trust >= 100:
+            animate_transition("Deal accepted!")
+            return True
+            
+    return trust >= 50
+
+def minigame_bomb_defusal(state: GameState) -> bool:
+    """Defuse a bomb by cutting wires"""
+    height, width = get_terminal_size()
+    
+    wires = ["RED", "BLUE", "GREEN", "YELLOW", "WHITE"]
+    correct_sequence = random.sample(wires, 3)
+    cut_wires = []
+    time_left = 30
+    
+    hide_cursor()
+    start_time = time.time()
+    try:
+        while len(cut_wires) < 3 and time_left > 0:
+            time_left = 30 - int(time.time() - start_time)
+            clear_screen()
+            
+            lines = [
+                "",
+                colorize("=== BOMB DEFUSAL ===", Color.BRIGHT_RED),
+                "",
+                f"Time: {colorize(f'{time_left}s', Color.BRIGHT_RED if time_left < 10 else Color.YELLOW)}",
+                "",
+                "Wires:"
+            ]
+            
+            for i, wire in enumerate(wires, 1):
+                if wire in cut_wires:
+                    lines.append(f"{i}) {colorize(f'[CUT] {wire}', Color.DIM)}")
+                else:
+                    color = Color.RED if wire == "RED" else Color.BLUE if wire == "BLUE" else Color.GREEN if wire == "GREEN" else Color.YELLOW if wire == "YELLOW" else Color.WHITE
+                    lines.append(f"{i}) {colorize(wire, color)}")
+            
+            lines.append("")
+            lines.append(colorize(f"Cut wire {len(cut_wires) + 1} (1-5)", Color.YELLOW))
+            
+            draw_panel(5, lines, center=True)
+            
+            choice = wait_for_key(['1', '2', '3', '4', '5'], timeout=1.0)
+            
+            if choice and choice in ['1', '2', '3', '4', '5']:
+                idx = int(choice) - 1
+                wire = wires[idx]
+                
+                if wire not in cut_wires:
+                    cut_wires.append(wire)
+                    
+                    if len(cut_wires) <= len(correct_sequence):
+                        if wire != correct_sequence[len(cut_wires) - 1]:
+                            animate_transition("*BOOM*")
+                            return False
+                            
+        if len(cut_wires) == 3:
+            animate_transition("Bomb defused!")
+            return True
+        else:
+            animate_transition("*BOOM* Time's up!")
+            return False
+    finally:
+        show_cursor()
+
+def minigame_alarm_disable(state: GameState) -> bool:
+    """Disable alarm system"""
+    height, width = get_terminal_size()
+    player = state.players[state.current_player]
+    hack_bonus = player.hack_speed_bonus if player.role == "Hacker" else 0
+    
+    nodes = 6
+    connections = [(i, (i + 1) % nodes) for i in range(nodes)]
+    connections.extend([(i, (i + 2) % nodes) for i in range(0, nodes, 2)])
+    
+    activated = [0]
+    target = nodes - 1
+    time_limit = max(10, 20 - int(hack_bonus * 10))
+    
+    start_time = time.time()
+    
+    hide_cursor()
+    try:
+        while time.time() - start_time < time_limit:
+            clear_screen()
+            remaining = time_limit - int(time.time() - start_time)
+            
+            lines = [
+                "",
+                colorize("=== ALARM SYSTEM ===", Color.BRIGHT_RED),
+                "",
+                f"Reach node {target} | Time: {remaining}s",
+                "",
+                "Network:"
+            ]
+            
+            # Show nodes
+            for i in range(nodes):
+                status = colorize("█", Color.GREEN) if i in activated else colorize("○", Color.DIM)
+                lines.append(f"  Node {i}: {status}")
+            
+            lines.append("")
+            lines.append("Available moves:")
+            
+            current = activated[-1]
+            available_moves = [conn[1] for conn in connections if conn[0] == current and conn[1] not in activated]
+            
+            for move in available_moves:
+                lines.append(f"  {move}) Jump to node {move}")
+            
+            draw_panel(5, lines, center=True)
+            
+            if not available_moves:
+                return False
+            
+            if current == target:
+                animate_transition("Alarm disabled!")
+                return True
+            
+            choice = wait_for_key([str(m) for m in available_moves], timeout=1.0)
+            
+            if choice and int(choice) in available_moves:
+                activated.append(int(choice))
+                
+        return False
+    finally:
+        show_cursor()
+
+def minigame_pickpocket(state: GameState, targets: int = 5) -> bool:
+    """Pickpocket minigame"""
+    height, width = get_terminal_size()
+    
+    stolen = 0
+    caught = False
+    
+    for target_num in range(targets):
+        clear_screen()
+        
+        # Random timing window
+        perfect_time = random.uniform(0.5, 2.0)
+        
+        lines = [
+            "",
+            colorize(f"=== PICKPOCKET Target {target_num + 1}/{targets} ===", Color.BRIGHT_YELLOW),
+            "",
+            f"Stolen: {stolen}",
+            "",
+            "Wait for the right moment...",
+            "",
+            colorize("Press SPACE at the perfect time!", Color.GREEN)
+        ]
+        
+        draw_panel(8, lines, center=True)
+        time.sleep(random.uniform(1.0, 2.5))
+        
+        start = time.time()
+        pressed_time = None
+        
+        while time.time() - start < 3.0:
+            elapsed = time.time() - start
+            
+            move_cursor(height // 2, width // 2 - 10)
+            bar = "█" * int(elapsed / 3.0 * 20)
+            print(colorize(bar, Color.YELLOW))
+            
+            if not pressed_time:
+                key = read_key()
+                if key == ' ':
+                    pressed_time = elapsed
+                    break
+            
+            time.sleep(0.05)
+        
+        if pressed_time and abs(pressed_time - perfect_time) < 0.3:
+            stolen += 1
+            animate_transition("Got it!")
+        elif pressed_time:
+            animate_transition("CAUGHT!")
+            caught = True
+            break
+        else:
+            animate_transition("Too slow!")
+            
+    return stolen >= targets // 2 and not caught
+
+def minigame_quick_time(state: GameState, events: int = 5) -> bool:
+    """Quick time events"""
+    height, width = get_terminal_size()
+    
+    success_count = 0
+    
+    for event_num in range(events):
+        clear_screen()
+        
+        required_key = random.choice(['W', 'A', 'S', 'D'])
+        reaction_time = 1.0
+        
+        lines = [
+            "",
+            colorize(f"=== QUICK TIME EVENT {event_num + 1}/{events} ===", Color.BRIGHT_RED),
+            "",
+            f"Success: {success_count}/{event_num if event_num > 0 else 1}",
+            "",
+            "",
+            colorize(f"PRESS {required_key}!", Color.BRIGHT_YELLOW),
+            ""
+        ]
+        
+        draw_panel(8, lines, center=True)
+        
+        start = time.time()
+        success = False
+        
+        while time.time() - start < reaction_time:
+            key = read_key_blocking(timeout=0.05)
+            if key == required_key:
+                success = True
+                success_count += 1
+                animate_transition("Perfect!")
+                break
+        
+        if not success:
+            animate_transition("Missed!")
+            
+    return success_count >= events * 0.7
+
+def minigame_motorcycle(state: GameState, duration: int = 15) -> bool:
+    """Motorcycle chase"""
+    height, width = get_terminal_size()
+    player = state.players[state.current_player]
+    handling = player.vehicle_handling * 1.5 if player.role == "Driver" else player.vehicle_handling
+    
+    player_lane = 1
+    distance = 0
+    obstacles = []
+    crashes = 0
+    max_crashes = 3
+    
+    start_time = time.time()
+    hide_cursor()
+    
+    try:
+        while time.time() - start_time < duration and crashes < max_crashes:
+            clear_screen()
+            elapsed = time.time() - start_time
+            remaining = duration - int(elapsed)
+            
+            move_cursor(1, 1)
+            print(colorize(f"MOTORCYCLE | Distance: {distance}m | Crashes: {crashes}/{max_crashes} | Time: {remaining}s", Color.BRIGHT_CYAN))
+            
+            # Spawn obstacles
+            if random.random() < 0.3:
+                obstacles.append([3, random.randint(0, 2)])
+            
+            # Draw road
+            for row in range(3, height - 2):
+                move_cursor(row, width // 2 - 10)
+                print(colorize("║", Color.WHITE) + "     " * 2 + colorize("║", Color.WHITE))
+            
+            # Draw obstacles
+            for obs in obstacles:
+                if 3 <= obs[0] < height - 2:
+                    obs_x = width // 2 - 8 + obs[1] * 5
+                    move_cursor(obs[0], obs_x)
+                    print(colorize("XXX", Color.RED))
+                obs[0] += 1
+            
+            # Remove off-screen obstacles
+            obstacles = [obs for obs in obstacles if obs[0] < height]
+            
+            # Draw motorcycle
+            bike_row = height - 3
+            bike_x = width // 2 - 8 + player_lane * 5
+            move_cursor(bike_row, bike_x)
+            print(colorize("═M═", Color.BRIGHT_YELLOW))
+            
+            # Check collision
+            for obs in obstacles:
+                if obs[0] == bike_row and obs[1] == player_lane:
+                    if random.random() > handling * 0.2:
+                        crashes += 1
+                        obstacles.remove(obs)
+                        move_cursor(height // 2, width // 2 - 5)
+                        print(colorize("*CRASH*", Color.BRIGHT_RED))
+                        time.sleep(0.5)
+                        
+            distance += 10
+            
+            move_cursor(height - 1, 1)
+            print(colorize("A/D=Lane | Keep moving!", Color.DIM))
+            sys.stdout.flush()
+            
+            key = read_key()
+            if key == 'A' and player_lane > 0:
+                player_lane -= 1
+            elif key == 'D' and player_lane < 2:
+                player_lane += 1
+            elif key == 'ESC':
+                return False
+                
+            time.sleep(1 / 15)
+            
+        return crashes < max_crashes
+    finally:
+        show_cursor()
+
+def minigame_sniper(state: GameState, targets: int = 3) -> bool:
+    """Sniper minigame - precision shooting"""
+    height, width = get_terminal_size()
+    player = state.players[state.current_player]
+    accuracy_bonus = 1.2 if player.role == "Gunner" else 1.0
+    
+    hits = 0
+    
+    hide_cursor()
+    try:
+        for target_num in range(targets):
+            target_x = random.randint(10, width - 10)
+            target_y = random.randint(5, height - 10)
+            scope_x = width // 2
+            scope_y = height // 2
+            
+            time_limit = 10
+            start = time.time()
+            
+            while time.time() - start < time_limit:
+                clear_screen()
+                remaining = time_limit - int(time.time() - start)
+                
+                move_cursor(1, 1)
+                print(colorize(f"SNIPER | Target {target_num + 1}/{targets} | Hits: {hits} | Time: {remaining}s", Color.BRIGHT_GREEN))
+                
+                # Draw target
+                move_cursor(target_y, target_x)
+                print(colorize("◎", Color.RED))
+                
+                # Draw scope crosshair
+                move_cursor(scope_y, scope_x - 1)
+                print(colorize("─┼─", Color.BRIGHT_YELLOW))
+                move_cursor(scope_y - 1, scope_x)
+                print(colorize("│", Color.BRIGHT_YELLOW))
+                move_cursor(scope_y + 1, scope_x)
+                print(colorize("│", Color.BRIGHT_YELLOW))
+                
+                move_cursor(height - 1, 1)
+                print(colorize("WASD=Aim | SPACE=Shoot | Hold steady!", Color.DIM))
+                sys.stdout.flush()
+                
+                key = read_key_blocking(timeout=0.1)
+                if key == 'W' and scope_y > 3:
+                    scope_y -= 1
+                elif key == 'S' and scope_y < height - 3:
+                    scope_y += 1
+                elif key == 'A' and scope_x > 3:
+                    scope_x -= 1
+                elif key == 'D' and scope_x < width - 3:
+                    scope_x += 1
+                elif key == ' ':
+                    dist = abs(scope_x - target_x) + abs(scope_y - target_y)
+                    if dist < 2 * accuracy_bonus:
+                        hits += 1
+                        animate_transition("HIT!")
+                        break
+                    else:
+                        animate_transition("MISS!")
+                        break
+                elif key == 'ESC':
+                    return False
+                    
+        return hits >= targets * 0.7
+    finally:
+        show_cursor()
+
+def minigame_escape_building(state: GameState) -> bool:
+    """Escape from building maze"""
+    height, width = get_terminal_size()
+    
+    # Simple maze
+    maze_size = 15
+    player_x, player_y = 1, 1
+    exit_x, exit_y = maze_size - 2, maze_size - 2
+    
+    walls = set()
+    for i in range(maze_size):
+        walls.add((i, 0))
+        walls.add((i, maze_size - 1))
+        walls.add((0, i))
+        walls.add((maze_size - 1, i))
+    
+    # Add some random walls
+    for _ in range(20):
+        walls.add((random.randint(2, maze_size - 3), random.randint(2, maze_size - 3)))
+    
+    time_limit = 45
+    start_time = time.time()
+    
+    hide_cursor()
+    try:
+        while time.time() - start_time < time_limit:
+            clear_screen()
+            remaining = time_limit - int(time.time() - start_time)
+            
+            move_cursor(1, 1)
+            print(colorize(f"ESCAPE | Time: {remaining}s | Find the EXIT!", Color.BRIGHT_RED))
+            
+            # Draw maze
+            offset_x = (width - maze_size * 2) // 2
+            offset_y = 4
+            
+            for y in range(maze_size):
+                move_cursor(offset_y + y, offset_x)
+                for x in range(maze_size):
+                    if (x, y) in walls:
+                        print(colorize("█", Color.WHITE), end=" ")
+                    elif x == player_x and y == player_y:
+                        print(colorize("@", Color.BRIGHT_GREEN), end=" ")
+                    elif x == exit_x and y == exit_y:
+                        print(colorize("E", Color.BRIGHT_CYAN), end=" ")
+                    else:
+                        print(" ", end=" ")
+            
+            if player_x == exit_x and player_y == exit_y:
+                animate_transition("ESCAPED!")
+                return True
+            
+            move_cursor(height - 1, 1)
+            print(colorize("WASD=Move | Find EXIT!", Color.DIM))
+            sys.stdout.flush()
+            
+            key = read_key_blocking(timeout=0.1)
+            new_x, new_y = player_x, player_y
+            
+            if key == 'W':
+                new_y -= 1
+            elif key == 'S':
+                new_y += 1
+            elif key == 'A':
+                new_x -= 1
+            elif key == 'D':
+                new_x += 1
+            elif key == 'ESC':
+                return False
+            
+            if (new_x, new_y) not in walls:
+                player_x, player_y = new_x, new_y
+                
+        return False
+    finally:
+        show_cursor()
+
+def minigame_helicopter(state: GameState, duration: int = 20) -> bool:
+    """Helicopter piloting"""
+    height, width = get_terminal_size()
+    
+    heli_y = height // 2
+    altitude_target = height // 2
+    obstacles = []
+    distance = 0
+    crashed = False
+    
+    start_time = time.time()
+    hide_cursor()
+    
+    try:
+        while time.time() - start_time < duration and not crashed:
+            clear_screen()
+            elapsed = time.time() - start_time
+            remaining = duration - int(elapsed)
+            
+            move_cursor(1, 1)
+            print(colorize(f"HELICOPTER | Distance: {distance}m | Altitude: {heli_y} | Time: {remaining}s", Color.BRIGHT_BLUE))
+            
+            # Spawn obstacles
+            if random.random() < 0.2:
+                obstacles.append([width - 5, random.randint(5, height - 5), random.choice(["building", "bird"])])
+            
+            # Draw obstacles
+            for obs in obstacles:
+                if 5 <= obs[0] < width - 5:
+                    move_cursor(obs[1], obs[0])
+                    symbol = "█" if obs[2] == "building" else "V"
+                    print(colorize(symbol, Color.RED))
+                obs[0] -= 1
+            
+            obstacles = [obs for obs in obstacles if obs[0] > 0]
+            
+            # Draw helicopter
+            heli_x = 10
+            move_cursor(heli_y, heli_x)
+            print(colorize("═╬═", Color.BRIGHT_YELLOW))
+            
+            # Check collision
+            for obs in obstacles:
+                if obs[0] == heli_x and abs(obs[1] - heli_y) < 2:
+                    crashed = True
+            
+            # Check boundaries
+            if heli_y < 3 or heli_y > height - 3:
+                crashed = True
+            
+            distance += 5
+            
+            move_cursor(height - 1, 1)
+            print(colorize("W=Up | S=Down | Stay airborne!", Color.DIM))
+            sys.stdout.flush()
+            
+            key = read_key()
+            if key == 'W' and heli_y > 3:
+                heli_y -= 1
+            elif key == 'S' and heli_y < height - 3:
+                heli_y += 1
+            elif key == 'ESC':
+                return False
+                
+            # Gravity
+            if random.random() < 0.3:
+                heli_y += 1
+                
+            time.sleep(1 / 12)
+            
+        if crashed:
+            animate_transition("CRASHED!")
+            return False
+        else:
+            animate_transition("Landing successful!")
+            return True
+    finally:
+        show_cursor()
+
+def minigame_climbing(state: GameState, height_to_climb: int = 20) -> bool:
+    """Climbing minigame"""
+    height_screen, width = get_terminal_size()
+    
+    climbed = 0
+    stamina = 100
+    
+    hide_cursor()
+    try:
+        while climbed < height_to_climb and stamina > 0:
+            clear_screen()
+            
+            move_cursor(1, 1)
+            print(colorize(f"CLIMBING | Height: {climbed}/{height_to_climb}m | Stamina: {'█' * (stamina // 10)}", Color.BRIGHT_CYAN))
+            
+            # Draw wall
+            wall_x = width // 2 - 5
+            for row in range(5, height_screen - 3):
+                move_cursor(row, wall_x)
+                print(colorize("│││││││││││", Color.WHITE))
+            
+            # Draw climber
+            climber_y = height_screen - 5 - min(10, climbed)
+            move_cursor(climber_y, wall_x + 5)
+            print(colorize("@", Color.BRIGHT_GREEN))
+            
+            move_cursor(height_screen - 1, 1)
+            print(colorize("SPACE=Climb | Wait=Rest | Don't fall!", Color.DIM))
+            sys.stdout.flush()
+            
+            key = read_key_blocking(timeout=0.5)
+            
+            if key == ' ':
+                if stamina >= 10:
+                    climbed += 1
+                    stamina -= 10
+                    if random.random() < 0.1:  # Slip chance
+                        animate_transition("Slipped!")
+                        climbed = max(0, climbed - 2)
+                else:
+                    animate_transition("Too tired!")
+            else:
+                stamina = min(100, stamina + 5)
+            
+            if key == 'ESC':
+                return False
+                
+        return climbed >= height_to_climb
+    finally:
+        show_cursor()
+
+def minigame_swimming(state: GameState, distance: int = 50) -> bool:
+    """Swimming/diving minigame"""
+    height_screen, width = get_terminal_size()
+    
+    swum = 0
+    oxygen = 100
+    depth = height_screen // 2
+    
+    hide_cursor()
+    try:
+        while swum < distance and oxygen > 0:
+            clear_screen()
+            
+            move_cursor(1, 1)
+            print(colorize(f"SWIMMING | Distance: {swum}/{distance}m | O2: {'█' * (oxygen // 10)}", Color.BRIGHT_BLUE))
+            
+            # Draw water
+            for row in range(3, height_screen - 2):
+                move_cursor(row, 5)
+                if row < depth:
+                    print(colorize("~" * 60, Color.CYAN))
+                else:
+                    print(colorize("≈" * 60, Color.BLUE))
+            
+            # Draw swimmer
+            move_cursor(depth, 30)
+            print(colorize("@", Color.BRIGHT_YELLOW))
+            
+            # Draw sharks/obstacles
+            if random.random() < 0.1:
+                shark_y = random.randint(depth + 5, height_screen - 5)
+                move_cursor(shark_y, 50)
+                print(colorize("<)))><", Color.RED))
+            
+            move_cursor(height_screen - 1, 1)
+            print(colorize("W=Up | S=Down | D=Swim | Surface for air!", Color.DIM))
+            sys.stdout.flush()
+            
+            key = read_key_blocking(timeout=0.2)
+            
+            if key == 'W' and depth > 5:
+                depth -= 1
+                if depth < height_screen // 3:
+                    oxygen = min(100, oxygen + 10)  # Surface = air
+            elif key == 'S' and depth < height_screen - 5:
+                depth += 1
+            elif key == 'D':
+                swum += 1
+            elif key == 'ESC':
+                return False
+            
+            if depth > height_screen // 2:
+                oxygen -= 2
+            else:
+                oxygen -= 1
+                
+        return swum >= distance and oxygen > 0
+    finally:
+        show_cursor()
+
+def minigame_interrogation(state: GameState) -> bool:
+    """Interrogation minigame - get information"""
+    height, width = get_terminal_size()
+    
+    stress = 50
+    info_gained = 0
+    target_info = 3
+    
+    questions = [
+        ("Where is the money?", "aggressive", 15, -10),
+        ("We can protect you...", "friendly", 10, 5),
+        ("You're going to jail!", "intimidate", 20, -15),
+        ("Let's make a deal.", "negotiate", 5, 10),
+    ]
+    
+    for round_num in range(5):
+        if info_gained >= target_info:
+            break
+            
+        clear_screen()
+        
+        lines = [
+            "",
+            colorize("=== INTERROGATION ===", Color.BRIGHT_RED),
+            "",
+            f"Info gathered: {info_gained}/{target_info}",
+            f"Target stress: {colorize('█' * (stress // 10), Color.RED if stress > 70 else Color.YELLOW)}",
+            "",
+            "Choose approach:"
+        ]
+        
+        for i, (question, approach, stress_change, info_change) in enumerate(questions, 1):
+            lines.append(f"{i}) {question} ({approach})")
+        
+        lines.append("")
+        lines.append(colorize("What do you do?", Color.YELLOW))
+        
+        draw_panel(5, lines, center=True)
+        
+        choice = wait_for_key(['1', '2', '3', '4'], timeout=10.0)
+        
+        if choice and choice in ['1', '2', '3', '4']:
+            idx = int(choice) - 1
+            stress += questions[idx][2]
+            
+            if stress > 80:
+                animate_transition("They shut down!")
+                return False
+            
+            if random.random() < 0.5:
+                info_gained += 1
+                animate_transition("They're talking!")
+            else:
+                animate_transition("They resist...")
+        else:
+            stress -= 10
+            
+    return info_gained >= target_info
+
+def minigame_disguise(state: GameState) -> bool:
+    """Disguise and blend in"""
+    height, width = get_terminal_size()
+    
+    suspicion = 0
+    checkpoints = 3
+    passed = 0
+    
+    disguises = ["Guard", "Janitor", "Executive", "Technician"]
+    current_disguise = random.choice(disguises)
+    
+    for checkpoint in range(checkpoints):
+        clear_screen()
+        
+        required_disguise = random.choice(disguises)
+        
+        lines = [
+            "",
+            colorize(f"=== CHECKPOINT {checkpoint + 1}/{checkpoints} ===", Color.BRIGHT_YELLOW),
+            "",
+            f"Your disguise: {colorize(current_disguise, Color.GREEN)}",
+            f"They're looking for: {colorize(required_disguise, Color.RED)}",
+            f"Suspicion: {colorize('█' * suspicion, Color.RED)}",
+            "",
+            "1) Walk confidently",
+            "2) Avoid eye contact",
+            "3) Show fake ID",
+            "4) Change disguise",
+            ""
+        ]
+        
+        draw_panel(5, lines, center=True)
+        
+        choice = wait_for_key(['1', '2', '3', '4'], timeout=8.0)
+        
+        if current_disguise == required_disguise:
+            passed += 1
+            animate_transition("Passed!")
+        elif choice == '4':
+            current_disguise = random.choice([d for d in disguises if d != current_disguise])
+            suspicion += 1
+            animate_transition(f"Changed to {current_disguise}")
+        elif choice == '1':
+            if random.random() < 0.5:
+                passed += 1
+                animate_transition("Bluffed through!")
+            else:
+                suspicion += 2
+                animate_transition("They're suspicious...")
+        elif choice == '2':
+            suspicion += 1
+        elif choice == '3':
+            if random.random() < 0.6:
+                passed += 1
+                animate_transition("ID accepted!")
+            else:
+                suspicion += 3
+                animate_transition("Fake detected!")
+        
+        if suspicion >= 5:
+            animate_transition("COVER BLOWN!")
+            return False
+            
+    return passed >= checkpoints // 2
 
 # === MISSIONS ===
 
@@ -1197,6 +2435,929 @@ def mission_arcadia_heist(state: GameState) -> bool:
 
 # === GAME MODES ===
 
+# === ADDITIONAL MISSIONS ===
+
+def mission_bank_robbery(state: GameState) -> bool:
+    """Bank robbery mission"""
+    height, width = get_terminal_size()
+    
+    clear_screen()
+    draw_hud(state)
+    
+    story = [
+        "",
+        colorize("=== BANK ROBBERY ===", Color.BRIGHT_YELLOW),
+        "",
+        "A downtown bank, lightly guarded.",
+        "Big risk, bigger reward.",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(5, story, center=True)
+    wait_for_key(['ENTER'])
+    
+    # Phase 1: Entry
+    animate_transition("Approaching bank...")
+    
+    if not minigame_stealth(state, guards=4, duration=25):
+        state.heat += 4
+        animate_transition("ALARM!")
+        payout = 10000
+    else:
+        state.heat += 1
+        payout = 30000
+    
+    # Phase 2: Vault
+    animate_transition("Cracking the vault...")
+    
+    if minigame_safecracking(state, difficulty=4):
+        payout += 20000
+    else:
+        state.heat += 2
+        payout = payout // 2
+    
+    # Phase 3: Escape
+    if state.heat >= 3:
+        animate_transition("POLICE INCOMING!")
+        if not minigame_driving(state, duration=20, difficulty=state.heat):
+            payout = payout // 3
+            state.players[state.current_player].hp -= 30
+    
+    state.cash += payout
+    state.completed_missions.append("bank_robbery")
+    
+    clear_screen()
+    draw_hud(state)
+    result = [
+        "",
+        colorize("BANK ROBBED!", Color.BRIGHT_GREEN),
+        "",
+        f"Haul: {colorize(f'${payout:,}', Color.YELLOW)}",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(8, result, center=True)
+    wait_for_key(['ENTER'])
+    
+    state.heat = max(0, state.heat - 1)
+    return True
+
+def mission_jewelry_store(state: GameState) -> bool:
+    """Smash and grab jewelry heist"""
+    height, width = get_terminal_size()
+    
+    clear_screen()
+    draw_hud(state)
+    
+    story = [
+        "",
+        colorize("=== DIAMOND DISTRICT ===", Color.BRIGHT_CYAN),
+        "",
+        "High-end jewelry store.",
+        "Smash, grab, go!",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(5, story, center=True)
+    wait_for_key(['ENTER'])
+    
+    animate_transition("*SMASH*")
+    state.heat += 3
+    
+    # Quick grab
+    if minigame_quick_time(state, events=6):
+        payout = 25000
+        animate_transition("Got the diamonds!")
+    else:
+        payout = 10000
+        animate_transition("Dropped some!")
+    
+    # Escape
+    animate_transition("RUN!")
+    
+    if minigame_chase_foot(state, duration=15):
+        payout += 5000
+    else:
+        state.heat += 2
+        payout = payout // 2
+        state.players[state.current_player].hp -= 20
+    
+    state.cash += payout
+    state.completed_missions.append("jewelry_store")
+    
+    clear_screen()
+    draw_hud(state)
+    result = [
+        "",
+        colorize("JEWELRY HEIST COMPLETE!", Color.BRIGHT_GREEN),
+        "",
+        f"Value: {colorize(f'${payout:,}', Color.YELLOW)}",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(8, result, center=True)
+    wait_for_key(['ENTER'])
+    
+    state.heat = max(0, state.heat - 1)
+    return True
+
+def mission_armory_heist(state: GameState) -> bool:
+    """Steal weapons from armory"""
+    height, width = get_terminal_size()
+    
+    clear_screen()
+    draw_hud(state)
+    
+    story = [
+        "",
+        colorize("=== ARMORY RAID ===", Color.BRIGHT_RED),
+        "",
+        "Military-grade weapons inside.",
+        "Heavy security, heavy firepower.",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(5, story, center=True)
+    wait_for_key(['ENTER'])
+    
+    # Disable alarm
+    animate_transition("Disabling security...")
+    
+    if minigame_alarm_disable(state):
+        state.heat += 1
+        payout = 40000
+    else:
+        state.heat += 5
+        payout = 15000
+        animate_transition("ALARM ACTIVE!")
+    
+    # Lockpicking
+    if minigame_lockpicking(state):
+        payout += 10000
+    
+    # Combat escape
+    if state.heat >= 4:
+        animate_transition("GUARDS INCOMING!")
+        if minigame_shooting(state, targets=15, time_limit=25):
+            payout += 5000
+        else:
+            payout = payout // 2
+            state.players[state.current_player].hp -= 40
+    
+    state.cash += payout
+    state.completed_missions.append("armory_heist")
+    
+    clear_screen()
+    draw_hud(state)
+    result = [
+        "",
+        colorize("ARMORY CLEARED!", Color.BRIGHT_GREEN),
+        "",
+        f"Weapons sold: {colorize(f'${payout:,}', Color.YELLOW)}",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(8, result, center=True)
+    wait_for_key(['ENTER'])
+    
+    state.heat = max(0, state.heat - 2)
+    return True
+
+def mission_drug_deal(state: GameState) -> bool:
+    """Intercept drug deal"""
+    height, width = get_terminal_size()
+    
+    clear_screen()
+    draw_hud(state)
+    
+    story = [
+        "",
+        colorize("=== DRUG DEAL ===", Color.BRIGHT_MAGENTA),
+        "",
+        "Rival gang has a big shipment.",
+        "Take it, sell it, profit.",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(5, story, center=True)
+    wait_for_key(['ENTER'])
+    
+    # Negotiation (fake)
+    animate_transition("Meeting with dealers...")
+    
+    if minigame_negotiation(state, difficulty=3):
+        payout = 20000
+        state.heat += 1
+    else:
+        animate_transition("DEAL GONE BAD!")
+        state.heat += 3
+        payout = 5000
+        
+        # Shootout
+        if minigame_shooting(state, targets=10, time_limit=20):
+            payout += 10000
+        else:
+            state.players[state.current_player].hp -= 30
+    
+    # Escape
+    if state.heat >= 3:
+        if minigame_motorcycle(state, duration=15):
+            payout += 5000
+        else:
+            payout = payout // 2
+    
+    state.cash += payout
+    state.completed_missions.append("drug_deal")
+    
+    clear_screen()
+    draw_hud(state)
+    result = [
+        "",
+        colorize("DEAL DONE!", Color.BRIGHT_GREEN),
+        "",
+        f"Profit: {colorize(f'${payout:,}', Color.YELLOW)}",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(8, result, center=True)
+    wait_for_key(['ENTER'])
+    
+    state.heat = max(0, state.heat - 1)
+    return True
+
+def mission_kidnapping(state: GameState) -> bool:
+    """Kidnap and ransom VIP"""
+    height, width = get_terminal_size()
+    
+    clear_screen()
+    draw_hud(state)
+    
+    story = [
+        "",
+        colorize("=== KIDNAPPING ===", Color.BRIGHT_RED),
+        "",
+        "Rich target, easy snatch.",
+        "Get the ransom, release them.",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(5, story, center=True)
+    wait_for_key(['ENTER'])
+    
+    # Snatch
+    animate_transition("Grabbing target...")
+    
+    if minigame_quick_time(state, events=4):
+        animate_transition("Target secured!")
+        payout = 50000
+        state.heat += 2
+    else:
+        animate_transition("Target escaped!")
+        return False
+    
+    # Escape
+    if minigame_driving(state, duration=15, difficulty=3):
+        payout += 10000
+    else:
+        state.heat += 2
+        payout = payout // 2
+    
+    # Negotiation
+    animate_transition("Negotiating ransom...")
+    
+    if minigame_negotiation(state, difficulty=4):
+        payout = int(payout * 1.5)
+    
+    state.cash += payout
+    state.completed_missions.append("kidnapping")
+    
+    clear_screen()
+    draw_hud(state)
+    result = [
+        "",
+        colorize("RANSOM PAID!", Color.BRIGHT_GREEN),
+        "",
+        f"Ransom: {colorize(f'${payout:,}', Color.YELLOW)}",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(8, result, center=True)
+    wait_for_key(['ENTER'])
+    
+    state.heat = max(0, state.heat - 1)
+    return True
+
+def mission_gang_war(state: GameState) -> bool:
+    """Gang territory war"""
+    height, width = get_terminal_size()
+    
+    clear_screen()
+    draw_hud(state)
+    
+    story = [
+        "",
+        colorize("=== GANG WAR ===", Color.BRIGHT_RED),
+        "",
+        "Rival gang moving in on your turf.",
+        "Defend your territory!",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(5, story, center=True)
+    wait_for_key(['ENTER'])
+    
+    # Combat phases
+    animate_transition("GANG INCOMING!")
+    
+    phase1 = minigame_shooting(state, targets=12, time_limit=20)
+    phase2 = minigame_quick_time(state, events=5)
+    phase3 = minigame_shooting(state, targets=8, time_limit=15)
+    
+    if phase1 and phase2 and phase3:
+        payout = 30000
+        state.heat += 2
+        animate_transition("TERRITORY SECURED!")
+    elif phase1 or phase2:
+        payout = 15000
+        state.heat += 3
+        state.players[state.current_player].hp -= 30
+        animate_transition("Barely held them off!")
+    else:
+        payout = 5000
+        state.heat += 4
+        state.players[state.current_player].hp -= 50
+        animate_transition("Territory lost!")
+    
+    state.cash += payout
+    state.completed_missions.append("gang_war")
+    
+    clear_screen()
+    draw_hud(state)
+    result = [
+        "",
+        colorize("GANG WAR OVER!", Color.BRIGHT_GREEN),
+        "",
+        f"Earnings: {colorize(f'${payout:,}', Color.YELLOW)}",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(8, result, center=True)
+    wait_for_key(['ENTER'])
+    
+    state.heat = max(0, state.heat - 1)
+    return True
+
+def mission_corrupt_cop(state: GameState) -> bool:
+    """Bribe/blackmail corrupt cop"""
+    height, width = get_terminal_size()
+    
+    clear_screen()
+    draw_hud(state)
+    
+    story = [
+        "",
+        colorize("=== CORRUPT COP ===", Color.BRIGHT_BLUE),
+        "",
+        "A dirty cop has info on you.",
+        "Turn them to your side.",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(5, story, center=True)
+    wait_for_key(['ENTER'])
+    
+    # Approach choice
+    clear_screen()
+    draw_hud(state)
+    approach = [
+        "",
+        "How do you handle this?",
+        "",
+        colorize("1)", Color.YELLOW) + " Bribe them ($10,000)",
+        colorize("2)", Color.YELLOW) + " Blackmail them (risky)",
+        colorize("3)", Color.YELLOW) + " Intimidate them (violent)",
+        ""
+    ]
+    draw_panel(8, approach, center=True)
+    choice = wait_for_key(['1', '2', '3'])
+    
+    if choice == '1' and state.cash >= 10000:
+        state.cash -= 10000
+        state.heat = max(0, state.heat - 2)
+        animate_transition("Cop is on your payroll!")
+        payout = 0
+    elif choice == '2':
+        if minigame_pickpocket(state, targets=1):
+            state.heat = max(0, state.heat - 3)
+            animate_transition("Got the dirt on them!")
+            payout = 15000
+        else:
+            state.heat += 3
+            animate_transition("They caught you!")
+            return False
+    else:
+        if minigame_intimidation(state):
+            state.heat += 1
+            animate_transition("They're scared!")
+            payout = 10000
+        else:
+            state.heat += 4
+            state.players[state.current_player].hp -= 25
+            animate_transition("Cop fought back!")
+            return False
+    
+    state.cash += payout
+    state.completed_missions.append("corrupt_cop")
+    
+    clear_screen()
+    draw_hud(state)
+    result = [
+        "",
+        colorize("COP HANDLED!", Color.BRIGHT_GREEN),
+        "",
+        f"Heat reduced! Future jobs easier.",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(8, result, center=True)
+    wait_for_key(['ENTER'])
+    
+    return True
+
+# Alias for interrogation
+def minigame_intimidation(state: GameState) -> bool:
+    return minigame_interrogation(state)
+
+def mission_escape_prison(state: GameState) -> bool:
+    """Break crew member out of prison"""
+    height, width = get_terminal_size()
+    
+    clear_screen()
+    draw_hud(state)
+    
+    story = [
+        "",
+        colorize("=== PRISON BREAK ===", Color.BRIGHT_YELLOW),
+        "",
+        "One of your crew is locked up.",
+        "Time to break them out!",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(5, story, center=True)
+    wait_for_key(['ENTER'])
+    
+    # Phase 1: Infiltrate
+    animate_transition("Getting inside...")
+    
+    if not minigame_disguise(state):
+        state.heat += 5
+        animate_transition("COVER BLOWN!")
+        return False
+    
+    # Phase 2: Find cell
+    animate_transition("Navigating prison...")
+    
+    if not minigame_escape_building(state):
+        state.heat += 4
+        animate_transition("LOST!")
+        return False
+    
+    # Phase 3: Break out
+    animate_transition("Freeing prisoner...")
+    
+    if minigame_lockpicking(state):
+        animate_transition("They're free!")
+    else:
+        state.heat += 3
+        animate_transition("Alarm triggered!")
+    
+    # Phase 4: Escape
+    if minigame_driving(state, duration=25, difficulty=5):
+        payout = 20000
+        state.heat += 2
+    else:
+        payout = 0
+        state.heat += 5
+        state.players[state.current_player].hp -= 40
+    
+    state.cash += payout
+    state.completed_missions.append("escape_prison")
+    
+    # Free a random crew member
+    locked_crew = [c for c in state.crew_members if c.recruited and not c.available]
+    if locked_crew:
+        locked_crew[0].available = True
+    
+    clear_screen()
+    draw_hud(state)
+    result = [
+        "",
+        colorize("PRISON BREAK SUCCESS!", Color.BRIGHT_GREEN),
+        "",
+        "Crew member freed!",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(8, result, center=True)
+    wait_for_key(['ENTER'])
+    
+    return True
+
+def mission_car_theft_ring(state: GameState) -> bool:
+    """Steal luxury cars for export"""
+    height, width = get_terminal_size()
+    
+    clear_screen()
+    draw_hud(state)
+    
+    story = [
+        "",
+        colorize("=== CAR THEFT RING ===", Color.BRIGHT_CYAN),
+        "",
+        "List of high-value cars to steal.",
+        "More cars = more money!",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(5, story, center=True)
+    wait_for_key(['ENTER'])
+    
+    cars_stolen = 0
+    target_cars = 5
+    
+    for car_num in range(target_cars):
+        animate_transition(f"Stealing car {car_num + 1}/{target_cars}...")
+        
+        # Steal car
+        if minigame_lockpicking(state):
+            cars_stolen += 1
+            
+            # Evade police
+            if random.random() < 0.4:
+                state.heat += 1
+                if not minigame_driving(state, duration=10, difficulty=2):
+                    cars_stolen -= 1
+                    state.heat += 1
+        else:
+            state.heat += 1
+            
+        if state.heat >= 5:
+            animate_transition("Too hot! Aborting!")
+            break
+    
+    payout = cars_stolen * 8000
+    state.cash += payout
+    state.completed_missions.append("car_theft_ring")
+    
+    clear_screen()
+    draw_hud(state)
+    result = [
+        "",
+        colorize("CARS DELIVERED!", Color.BRIGHT_GREEN),
+        "",
+        f"Cars stolen: {cars_stolen}/{target_cars}",
+        f"Payment: {colorize(f'${payout:,}', Color.YELLOW)}",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(8, result, center=True)
+    wait_for_key(['ENTER'])
+    
+    state.heat = max(0, state.heat - 1)
+    return True
+
+def mission_smuggling(state: GameState) -> bool:
+    """Smuggle contraband across the city"""
+    height, width = get_terminal_size()
+    
+    clear_screen()
+    draw_hud(state)
+    
+    story = [
+        "",
+        colorize("=== SMUGGLING RUN ===", Color.BRIGHT_MAGENTA),
+        "",
+        "Illegal goods need transport.",
+        "Don't get caught!",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(5, story, center=True)
+    wait_for_key(['ENTER'])
+    
+    # Long drive with checkpoints
+    animate_transition("Loading cargo...")
+    
+    checkpoints_passed = 0
+    total_checkpoints = 3
+    
+    for checkpoint in range(total_checkpoints):
+        animate_transition(f"Checkpoint {checkpoint + 1}/{total_checkpoints}...")
+        
+        # Random encounter
+        if random.random() < 0.5:
+            animate_transition("POLICE CHECKPOINT!")
+            
+            if minigame_disguise(state):
+                checkpoints_passed += 1
+            else:
+                state.heat += 2
+                
+                # Chase
+                if minigame_driving(state, duration=15, difficulty=3):
+                    checkpoints_passed += 1
+                else:
+                    state.heat += 2
+                    break
+        else:
+            checkpoints_passed += 1
+            animate_transition("Clear!")
+    
+    payout = checkpoints_passed * 15000
+    state.cash += payout
+    state.completed_missions.append("smuggling")
+    
+    clear_screen()
+    draw_hud(state)
+    result = [
+        "",
+        colorize("SMUGGLING COMPLETE!", Color.BRIGHT_GREEN),
+        "",
+        f"Checkpoints: {checkpoints_passed}/{total_checkpoints}",
+        f"Payment: {colorize(f'${payout:,}', Color.YELLOW)}",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(8, result, center=True)
+    wait_for_key(['ENTER'])
+    
+    state.heat = max(0, state.heat - 1)
+    return True
+
+def mission_casino_heist(state: GameState) -> bool:
+    """Rob a casino - Ocean's Eleven style"""
+    height, width = get_terminal_size()
+    
+    clear_screen()
+    draw_hud(state)
+    
+    story = [
+        "",
+        colorize("=== CASINO HEIST ===", Color.BRIGHT_YELLOW),
+        "",
+        "The big score.",
+        "Plan carefully, execute perfectly.",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(5, story, center=True)
+    wait_for_key(['ENTER'])
+    
+    # Planning phase
+    animate_transition("Planning the heist...")
+    
+    # Phase 1: Disguise entry
+    if not minigame_disguise(state):
+        state.heat += 5
+        animate_transition("Bounced by security!")
+        return False
+    
+    # Phase 2: Disable security
+    animate_transition("Disabling cameras...")
+    
+    if minigame_alarm_disable(state):
+        payout = 100000
+    else:
+        state.heat += 3
+        payout = 50000
+        animate_transition("Partial disable!")
+    
+    # Phase 3: Vault
+    animate_transition("Cracking vault...")
+    
+    if minigame_safecracking(state, difficulty=5):
+        payout += 50000
+    else:
+        state.heat += 3
+        payout = payout // 2
+    
+    # Phase 4: Escape
+    animate_transition("SECURITY ALERTED!")
+    
+    if minigame_stealth(state, guards=8, duration=40):
+        payout += 25000
+    else:
+        state.heat += 4
+        if not minigame_driving(state, duration=25, difficulty=5):
+            payout = payout // 3
+            state.players[state.current_player].hp -= 40
+    
+    state.cash += payout
+    state.completed_missions.append("casino_heist")
+    
+    clear_screen()
+    draw_hud(state)
+    result = [
+        "",
+        colorize("╔═══════════════════════════╗", Color.BRIGHT_YELLOW),
+        colorize("║  CASINO HEIST SUCCESS!    ║", Color.BRIGHT_YELLOW),
+        colorize("╚═══════════════════════════╝", Color.BRIGHT_YELLOW),
+        "",
+        f"Total haul: {colorize(f'${payout:,}', Color.BRIGHT_GREEN)}",
+        "",
+        "Living large!",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(6, result, center=True)
+    wait_for_key(['ENTER'])
+    
+    state.heat = max(0, state.heat - 2)
+    return True
+
+def mission_art_gallery(state: GameState) -> bool:
+    """Steal priceless art"""
+    height, width = get_terminal_size()
+    
+    clear_screen()
+    draw_hud(state)
+    
+    story = [
+        "",
+        colorize("=== ART GALLERY ===", Color.BRIGHT_CYAN),
+        "",
+        "Priceless paintings, minimal security.",
+        "A collector is paying top dollar.",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(5, story, center=True)
+    wait_for_key(['ENTER'])
+    
+    # Stealth mission
+    animate_transition("Infiltrating gallery...")
+    
+    if not minigame_stealth(state, guards=6, duration=35):
+        state.heat += 4
+        animate_transition("DETECTED!")
+        return False
+    
+    # Disable alarms
+    animate_transition("Disabling alarms...")
+    
+    if minigame_alarm_disable(state):
+        payout = 60000
+    else:
+        state.heat += 3
+        payout = 30000
+    
+    # Grab art
+    animate_transition("Taking the paintings...")
+    
+    if minigame_quick_time(state, events=5):
+        payout += 20000
+    else:
+        state.heat += 2
+    
+    # Escape
+    if state.heat >= 3:
+        if not minigame_escape_building(state):
+            payout = payout // 2
+            state.heat += 2
+    
+    state.cash += payout
+    state.completed_missions.append("art_gallery")
+    
+    clear_screen()
+    draw_hud(state)
+    result = [
+        "",
+        colorize("ART STOLEN!", Color.BRIGHT_GREEN),
+        "",
+        f"Art value: {colorize(f'${payout:,}', Color.YELLOW)}",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    draw_panel(8, result, center=True)
+    wait_for_key(['ENTER'])
+    
+    state.heat = max(0, state.heat - 1)
+    return True
+
+def mission_final_showdown(state: GameState) -> bool:
+    """Final epic mission"""
+    height, width = get_terminal_size()
+    
+    clear_screen()
+    draw_hud(state)
+    
+    story = [
+        "",
+        colorize("=== THE FINAL SHOWDOWN ===", Color.BRIGHT_RED),
+        "",
+        "Everything has led to this.",
+        "One last job. The biggest yet.",
+        "",
+        "All your skills will be tested.",
+        "",
+        colorize("Press ENTER when ready", Color.BRIGHT_YELLOW)
+    ]
+    draw_panel(5, story, center=True)
+    wait_for_key(['ENTER'])
+    
+    payout = 200000
+    phases_completed = 0
+    total_phases = 6
+    
+    # Phase 1: Infiltration
+    animate_transition("Phase 1: Infiltration")
+    if minigame_disguise(state):
+        phases_completed += 1
+        payout += 50000
+    else:
+        state.heat += 2
+    
+    # Phase 2: Hacking
+    animate_transition("Phase 2: Security Systems")
+    if minigame_hacking(state, complexity=5):
+        phases_completed += 1
+        payout += 50000
+    else:
+        state.heat += 2
+    
+    # Phase 3: Combat
+    animate_transition("Phase 3: Hostile Contact!")
+    if minigame_shooting(state, targets=20, time_limit=30):
+        phases_completed += 1
+        payout += 50000
+    else:
+        state.players[state.current_player].hp -= 30
+    
+    # Phase 4: Vault
+    animate_transition("Phase 4: The Vault")
+    if minigame_safecracking(state, difficulty=5):
+        phases_completed += 1
+        payout += 100000
+    else:
+        state.heat += 3
+    
+    # Phase 5: Extraction
+    animate_transition("Phase 5: Escape Route")
+    if minigame_escape_building(state):
+        phases_completed += 1
+        payout += 50000
+    else:
+        state.heat += 2
+    
+    # Phase 6: Final Chase
+    animate_transition("Phase 6: THE ENTIRE CITY IS AFTER YOU!")
+    state.heat = 5
+    
+    if minigame_driving(state, duration=30, difficulty=5):
+        phases_completed += 1
+        payout += 100000
+        animate_transition("YOU MADE IT!")
+    else:
+        payout = payout // 2
+        state.players[state.current_player].hp -= 50
+        animate_transition("Barely escaped with your life!")
+    
+    state.cash += payout
+    state.completed_missions.append("final_showdown")
+    
+    # Epic finale
+    clear_screen()
+    
+    finale = [
+        "",
+        colorize("╔══════════════════════════════════╗", Color.BRIGHT_YELLOW),
+        colorize("║                                  ║", Color.BRIGHT_YELLOW),
+        colorize("║     CONGRATULATIONS!             ║", Color.BRIGHT_YELLOW),
+        colorize("║                                  ║", Color.BRIGHT_YELLOW),
+        colorize("╚══════════════════════════════════╝", Color.BRIGHT_YELLOW),
+        "",
+        colorize("YOU COMPLETED TERMINAL HEIST!", Color.BRIGHT_GREEN),
+        "",
+        f"Phases completed: {colorize(f'{phases_completed}/{total_phases}', Color.CYAN)}",
+        f"Final haul: {colorize(f'${payout:,}', Color.BRIGHT_YELLOW)}",
+        f"Total wealth: {colorize(f'${state.cash:,}', Color.BRIGHT_GREEN)}",
+        "",
+        f"Missions completed: {len(state.completed_missions)}",
+        f"Character: {state.players[state.current_player].name}",
+        "",
+        "You're a legend now.",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+    
+    draw_panel(3, finale, center=True)
+    wait_for_key(['ENTER'])
+    
+    state.heat = 0
+    return True
+
+
 def show_main_menu(state: GameState) -> str:
     """Show main menu and return choice"""
     height, width = get_terminal_size()
@@ -1497,9 +3658,23 @@ def start_mission(state: GameState, mission_id: str):
         "tutorial": mission_tutorial,
         "recruit_crew": mission_recruit_crew,
         "mini_heist": mission_mini_heist,
+        "bank_robbery": mission_bank_robbery,
+        "jewelry_store": mission_jewelry_store,
+        "armory_heist": mission_armory_heist,
+        "drug_deal": mission_drug_deal,
+        "kidnapping": mission_kidnapping,
+        "gang_war": mission_gang_war,
+        "corrupt_cop": mission_corrupt_cop,
+        "escape_prison": mission_escape_prison,
+        "car_theft_ring": mission_car_theft_ring,
+        "smuggling": mission_smuggling,
+        "casino_heist": mission_casino_heist,
+        "art_gallery": mission_art_gallery,
         "prep_arcadia": mission_prep_arcadia,
         "arcadia_heist": mission_arcadia_heist,
+        "final_showdown": mission_final_showdown,
     }
+
 
     func = mission_funcs.get(mission_id)
     if func:
