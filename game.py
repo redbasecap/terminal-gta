@@ -274,14 +274,19 @@ class Player:
 
 @dataclass
 class Mission:
-    """Mission definition"""
+    """Mission definition with tier-based progression"""
     id: str
     name: str
     description: str
-    required_mission: Optional[str] = None
+    tier: int = 0  # Mission tier (0=tutorial, 1-5=progression)
+    required_tier: int = -1  # Which tier must be partially complete
+    required_count: int = 0  # How many missions from required_tier needed
+    required_mission: Optional[str] = None  # Legacy: specific mission requirement
+    optional: bool = False  # If True, not required for tier progression
     completed: bool = False
     available: bool = True
     payout: int = 0
+    category: str = "general"  # combat, stealth, tech, social
 
 @dataclass
 class CityZone:
@@ -363,167 +368,323 @@ def create_crew_pool() -> List[CrewMember]:
     ]
 
 def create_missions() -> List[Mission]:
-    """Create all available missions"""
+    """Create all available missions with tier-based progression"""
     return [
-        # Starter missions
+        # TIER 0 - TUTORIAL (Required for all)
         Mission(
             id="tutorial",
             name="First Wheels",
             description="Steal a car and escape the cops. Learn the basics.",
-            payout=500
+            tier=0,
+            required_tier=-1,
+            required_count=0,
+            payout=500,
+            category="tutorial"
         ),
+
+        # TIER 1 - INTRODUCTION (Complete 1 to unlock Tier 2)
         Mission(
             id="recruit_crew",
             name="Building the Team",
-            description="Find and recruit crew members for future heists.",
-            required_mission="tutorial",
-            payout=1000
+            description="Find and recruit crew members. Team-building path.",
+            tier=1,
+            required_tier=0,
+            required_count=1,  # Need tutorial
+            payout=1000,
+            category="social"
         ),
         Mission(
             id="mini_heist",
             name="Small Time Score",
-            description="Rob a convenience store. Choose your approach.",
-            required_mission="recruit_crew",
-            payout=5000
-        ),
-        
-        # Mid-tier missions
-        Mission(
-            id="bank_robbery",
-            name="Bank Robbery",
-            description="Hit a downtown bank. High risk, high reward.",
-            required_mission="mini_heist",
-            payout=30000
-        ),
-        Mission(
-            id="jewelry_store",
-            name="Diamond District",
-            description="Smash and grab at a high-end jewelry store.",
-            required_mission="mini_heist",
-            payout=25000
-        ),
-        Mission(
-            id="armory_heist",
-            name="Armory Raid",
-            description="Steal military-grade weapons from the armory.",
-            required_mission="bank_robbery",
-            payout=40000
-        ),
-        Mission(
-            id="drug_deal",
-            name="Drug Deal",
-            description="Intercept a rival gang's drug shipment.",
-            required_mission="jewelry_store",
-            payout=20000
-        ),
-        Mission(
-            id="kidnapping",
-            name="Kidnapping",
-            description="Kidnap a VIP and collect ransom.",
-            required_mission="bank_robbery",
-            payout=50000
-        ),
-        Mission(
-            id="gang_war",
-            name="Gang War",
-            description="Defend your territory from rival gangs.",
-            required_mission="drug_deal",
-            payout=30000
-        ),
-        Mission(
-            id="corrupt_cop",
-            name="Corrupt Cop",
-            description="Deal with a dirty cop who has dirt on you.",
-            required_mission="gang_war",
-            payout=15000
-        ),
-        
-        # Advanced missions
-        Mission(
-            id="escape_prison",
-            name="Prison Break",
-            description="Break a crew member out of prison.",
-            required_mission="corrupt_cop",
-            payout=20000
+            description="Rob a convenience store. Direct action path.",
+            tier=1,
+            required_tier=0,
+            required_count=1,  # Need tutorial
+            payout=5000,
+            category="combat"
         ),
         Mission(
             id="car_theft_ring",
             name="Car Theft Ring",
-            description="Steal luxury cars for export.",
-            required_mission="armory_heist",
-            payout=40000
+            description="Steal luxury cars for export. Vehicle/tech path.",
+            tier=1,
+            required_tier=0,
+            required_count=1,  # Need tutorial
+            payout=8000,
+            category="tech"
+        ),
+
+        # TIER 2 - SPECIALIZATION (Complete 3 to unlock Tier 3)
+        Mission(
+            id="bank_robbery",
+            name="Bank Robbery",
+            description="Hit a downtown bank. Combat-focused.",
+            tier=2,
+            required_tier=1,
+            required_count=1,  # Need any 1 Tier 1 mission
+            payout=30000,
+            category="combat"
+        ),
+        Mission(
+            id="jewelry_store",
+            name="Diamond District",
+            description="Smash and grab diamonds. Speed & agility.",
+            tier=2,
+            required_tier=1,
+            required_count=1,
+            payout=25000,
+            category="stealth"
+        ),
+        Mission(
+            id="drug_deal",
+            name="Drug Deal",
+            description="Intercept rival gang shipment. Negotiation skills.",
+            tier=2,
+            required_tier=1,
+            required_count=1,
+            payout=20000,
+            category="social"
+        ),
+        Mission(
+            id="armory_heist",
+            name="Armory Raid",
+            description="Steal military weapons. Heavy firepower required.",
+            tier=2,
+            required_tier=1,
+            required_count=1,
+            payout=40000,
+            category="combat"
         ),
         Mission(
             id="smuggling",
             name="Smuggling Run",
-            description="Transport contraband across the city.",
-            required_mission="car_theft_ring",
-            payout=45000
+            description="Transport contraband. Stealth & driving.",
+            tier=2,
+            required_tier=1,
+            required_count=1,
+            payout=35000,
+            category="stealth"
+        ),
+        Mission(
+            id="kidnapping",
+            name="Kidnapping",
+            description="Kidnap VIP for ransom. Planning required.",
+            tier=2,
+            required_tier=1,
+            required_count=1,
+            payout=45000,
+            category="tech"
+        ),
+
+        # TIER 3 - REPUTATION (Complete 2 to unlock Tier 4)
+        Mission(
+            id="gang_war",
+            name="Gang War",
+            description="Defend territory from rivals. Pure combat.",
+            tier=3,
+            required_tier=2,
+            required_count=3,  # Need 3 Tier 2 missions
+            payout=35000,
+            category="combat"
+        ),
+        Mission(
+            id="corrupt_cop",
+            name="Corrupt Cop",
+            description="Handle dirty cop. Reduces heat permanently.",
+            tier=3,
+            required_tier=2,
+            required_count=3,
+            payout=20000,
+            category="social"
         ),
         Mission(
             id="casino_heist",
             name="Casino Heist",
-            description="Ocean's Eleven style casino robbery.",
-            required_mission="smuggling",
-            payout=100000
+            description="Ocean's Eleven style. High stakes precision.",
+            tier=3,
+            required_tier=2,
+            required_count=3,
+            payout=80000,
+            category="tech"
         ),
         Mission(
             id="art_gallery",
             name="Art Gallery",
-            description="Steal priceless paintings from a gallery.",
-            required_mission="casino_heist",
-            payout=60000
+            description="Steal priceless art. Stealth perfection.",
+            tier=3,
+            required_tier=2,
+            required_count=3,
+            payout=65000,
+            category="stealth"
         ),
-        
-        # Epic finales
+        Mission(
+            id="escape_prison",
+            name="Prison Break",
+            description="Break out crew member. Loyalty bonus.",
+            tier=3,
+            required_tier=2,
+            required_count=3,
+            payout=25000,
+            category="tech",
+            optional=True  # Optional side mission
+        ),
+
+        # TIER 4 - PREPARATION (Both required for finale)
         Mission(
             id="prep_arcadia",
             name="Arcadia Prep",
-            description="Scout the Arcadia vault and gather intel.",
-            required_mission="art_gallery",
-            payout=2000
+            description="Scout the legendary Arcadia vault.",
+            tier=4,
+            required_tier=3,
+            required_count=2,  # Need 2 Tier 3 missions
+            payout=5000,
+            category="tech"
         ),
         Mission(
             id="arcadia_heist",
             name="The Arcadia Job",
-            description="Rob the legendary Arcadia vault.",
-            required_mission="prep_arcadia",
-            payout=150000
+            description="Rob the legendary vault. Epic multi-phase heist.",
+            tier=4,
+            required_tier=4,
+            required_count=1,  # Need prep_arcadia
+            required_mission="prep_arcadia",  # Specific requirement
+            payout=150000,
+            category="combat"
         ),
+
+        # TIER 5 - FINALE (Optional ultimate challenge)
         Mission(
             id="final_showdown",
             name="Final Showdown",
-            description="The ultimate heist. Everything is on the line.",
-            required_mission="arcadia_heist",
-            payout=200000
+            description="The ultimate heist. 6 phases of pure skill.",
+            tier=5,
+            required_tier=4,
+            required_count=2,  # Need both Tier 4 missions
+            payout=250000,
+            category="combat",
+            optional=True  # Can "beat" game without this
         )
     ]
 
 def create_city_zones() -> List[CityZone]:
-    """Create city map zones"""
+    """Create city map zones with tier-organized missions"""
     return [
-        CityZone("Harbor", 2, 2, "H", Color.BLUE, [
-            "mini_heist", "smuggling", "drug_deal"
-        ]),
+        # Start zone
         CityZone("Downtown", 5, 5, "D", Color.YELLOW, [
-            "tutorial", "bank_robbery", "jewelry_store", "arcadia_heist"
+            "tutorial",  # Tier 0
+            "mini_heist",  # Tier 1
+            "bank_robbery",  # Tier 2
+            "jewelry_store",  # Tier 2
         ]),
+
+        # Early-mid zones
         CityZone("Suburbs", 8, 3, "S", Color.GREEN, [
-            "recruit_crew", "kidnapping", "car_theft_ring"
+            "recruit_crew",  # Tier 1
+            "kidnapping",  # Tier 2
         ]),
+
+        CityZone("Harbor", 2, 2, "H", Color.BLUE, [
+            "car_theft_ring",  # Tier 1
+            "smuggling",  # Tier 2
+            "drug_deal",  # Tier 2
+        ]),
+
+        # Mid-game zones
         CityZone("Industrial", 7, 8, "I", Color.RED, [
-            "prep_arcadia", "armory_heist", "gang_war"
+            "armory_heist",  # Tier 2
+            "gang_war",  # Tier 3
         ]),
+
         CityZone("Uptown", 10, 6, "U", Color.CYAN, [
-            "casino_heist", "art_gallery", "corrupt_cop"
+            "casino_heist",  # Tier 3
+            "art_gallery",  # Tier 3
+            "corrupt_cop",  # Tier 3
         ]),
+
+        # Special zones
         CityZone("Prison", 1, 9, "P", Color.MAGENTA, [
-            "escape_prison"
+            "escape_prison",  # Tier 3 (optional)
         ]),
-        CityZone("Finale", 11, 11, "F", Color.BRIGHT_RED, [
-            "final_showdown"
+
+        # Endgame zones
+        CityZone("Arcadia", 11, 10, "A", Color.BRIGHT_YELLOW, [
+            "prep_arcadia",  # Tier 4
+            "arcadia_heist",  # Tier 4
+        ]),
+
+        CityZone("Finale", 11, 2, "F", Color.BRIGHT_RED, [
+            "final_showdown",  # Tier 5 (optional)
         ])
     ]
+
+
+# === TIER SYSTEM LOGIC ===
+
+def is_mission_available(mission: Mission, state: GameState, all_missions: List[Mission]) -> bool:
+    """Check if a mission is available based on tier system"""
+    # Already completed
+    if mission.id in state.completed_missions:
+        return False
+    
+    # Tutorial is always available if not completed
+    if mission.tier == 0:
+        return True
+    
+    # Check tier requirements
+    if mission.required_tier >= 0:
+        # Count completed missions in required tier
+        completed_in_tier = sum(
+            1 for m in all_missions
+            if m.tier == mission.required_tier and m.id in state.completed_missions
+        )
+        
+        if completed_in_tier < mission.required_count:
+            return False
+    
+    # Check specific mission requirement (legacy/special cases)
+    if mission.required_mission:
+        if mission.required_mission not in state.completed_missions:
+            return False
+    
+    return True
+
+def get_player_tier(state: GameState, all_missions: List[Mission]) -> int:
+    """Get the highest tier the player has access to"""
+    max_tier = 0
+    
+    for tier in range(6):  # 0-5
+        # Count completed missions in this tier
+        completed_in_tier = sum(
+            1 for m in all_missions
+            if m.tier == tier and m.id in state.completed_missions
+        )
+        
+        if completed_in_tier > 0:
+            max_tier = tier
+    
+    return max_tier
+
+def get_tier_progress(state: GameState, tier: int, all_missions: List[Mission]) -> tuple:
+    """Get progress in a specific tier (completed, total_required, total_available)"""
+    tier_missions = [m for m in all_missions if m.tier == tier and not m.optional]
+    completed = sum(1 for m in tier_missions if m.id in state.completed_missions)
+    total_available = len(tier_missions)
+    
+    # Determine requirement for next tier
+    if tier == 0:
+        required = 1  # Must complete tutorial
+    elif tier == 1:
+        required = 1  # Complete 1 to unlock tier 2
+    elif tier == 2:
+        required = 3  # Complete 3 to unlock tier 3
+    elif tier == 3:
+        required = 2  # Complete 2 to unlock tier 4
+    elif tier == 4:
+        required = 2  # Complete both tier 4 missions
+    else:
+        required = total_available
+    
+    return (completed, required, total_available)
 
 def create_city_zones() -> List[CityZone]:
     """Create city map zones"""
@@ -3453,34 +3614,59 @@ def show_map(state: GameState):
         info_y = map_start_y + map_size + 2
 
         if current_zone:
+            # Get player's current tier progress
+            player_tier = get_player_tier(state, missions)
+            tier_completed, tier_required, tier_total = get_tier_progress(state, player_tier, missions)
+
             info = [
                 f"Location: {colorize(current_zone.name, Color.BRIGHT_YELLOW)}",
+                f"Your Tier: {colorize(f'Tier {player_tier}', Color.CYAN)} ({tier_completed}/{tier_required} to next)",
                 ""
             ]
 
-            # Show available missions
+            # Show available missions using new tier system
             available = False
+            locked = []
+
             for mission_id in current_zone.missions:
                 mission = next((m for m in missions if m.id == mission_id), None)
-                if mission and mission_id not in state.completed_missions:
-                    # Check if required mission is complete
-                    if not mission.required_mission or mission.required_mission in state.completed_missions:
-                        info.append(colorize(f"► {mission.name}", Color.BRIGHT_GREEN))
-                        info.append(f"  {mission.description}")
-                        available = True
+                if not mission:
+                    continue
+
+                if mission.id in state.completed_missions:
+                    # Show completed missions in dim
+                    info.append(colorize(f"✓ {mission.name} (DONE)", Color.DIM))
+                elif is_mission_available(mission, state, missions):
+                    # Available mission
+                    category_icon = {"combat": "⚔", "stealth": "👤", "tech": "⚙", "social": "💬", "tutorial": "📚"}.get(mission.category, "•")
+                    info.append(colorize(f"► {category_icon} {mission.name}", Color.BRIGHT_GREEN))
+                    info.append(f"  {mission.description}")
+                    info.append(f"  Tier {mission.tier} | ${mission.payout:,}")
+                    available = True
+                else:
+                    # Locked mission - show why
+                    locked.append(mission)
+
+            if locked:
+                info.append("")
+                info.append(colorize("🔒 Locked missions:", Color.DIM))
+                for mission in locked[:2]:  # Show max 2 locked
+                    req_text = f"Need {mission.required_count} Tier {mission.required_tier} missions"
+                    info.append(colorize(f"  • {mission.name} ({req_text})", Color.DIM))
 
             if available:
                 info.append("")
                 info.append(colorize(">>> Press ENTER to start! <<<", Color.BRIGHT_YELLOW))
-            else:
-                info.append(colorize("No missions available here.", Color.DIM))
+            elif not locked:
+                info.append(colorize("All missions here completed!", Color.GREEN))
 
             draw_panel(info_y, info, center=True)
         else:
             draw_panel(info_y, [
-                colorize("Move cursor to a zone marker (H/D/S/I)", Color.DIM),
+                colorize("Move cursor to a zone marker to see missions", Color.DIM),
                 "",
-                "H=Harbor, D=Downtown, S=Suburbs, I=Industrial"
+                "D=Downtown | S=Suburbs | H=Harbor | I=Industrial",
+                "U=Uptown | P=Prison | A=Arcadia | F=Finale"
             ], center=True)
 
         # Controls
