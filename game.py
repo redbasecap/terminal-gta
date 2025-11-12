@@ -1304,16 +1304,23 @@ def show_map(state: GameState):
                 if mission and mission_id not in state.completed_missions:
                     # Check if required mission is complete
                     if not mission.required_mission or mission.required_mission in state.completed_missions:
-                        info.append(colorize(f"► {mission.name}", Color.GREEN))
+                        info.append(colorize(f"► {mission.name}", Color.BRIGHT_GREEN))
+                        info.append(f"  {mission.description}")
                         available = True
 
             if available:
                 info.append("")
-                info.append(colorize("Press ENTER to start mission", Color.YELLOW))
+                info.append(colorize(">>> Press ENTER to start! <<<", Color.BRIGHT_YELLOW))
+            else:
+                info.append(colorize("No missions available here.", Color.DIM))
 
             draw_panel(info_y, info, center=True)
         else:
-            draw_panel(info_y, ["Move cursor to a location"], center=True)
+            draw_panel(info_y, [
+                colorize("Move cursor to a zone marker (H/D/S/I)", Color.DIM),
+                "",
+                "H=Harbor, D=Downtown, S=Suburbs, I=Industrial"
+            ], center=True)
 
         # Controls
         move_cursor(height - 2, 1)
@@ -1321,11 +1328,10 @@ def show_map(state: GameState):
 
         sys.stdout.flush()
 
-        # Input - use non-blocking for smooth map navigation
-        key = read_key()
+        # Input - use blocking read for better control
+        key = read_key_blocking(timeout=0.1)
 
         if not key:
-            time.sleep(0.05)
             continue
 
         # Handle movement
@@ -1339,7 +1345,7 @@ def show_map(state: GameState):
             state.map_cursor_x += 1
 
         # Handle actions
-        elif key == '\r' or key == '\n' or key.upper() == 'ENTER':
+        elif key == 'ENTER' or key == '\r' or key == '\n':
             # Start mission if available
             if current_zone:
                 mission_started = False
@@ -1355,7 +1361,7 @@ def show_map(state: GameState):
                 if not mission_started and current_zone:
                     animate_transition("No missions available here!")
 
-        elif key == '\x1b' or key.startswith('\x1b') or key.upper() == 'ESC':
+        elif key == 'ESC' or key == '\x1b' or key.startswith('\x1b'):
             break
         elif key == 'Q':
             try_character_switch(state)
@@ -1363,8 +1369,6 @@ def show_map(state: GameState):
             show_shop(state)
         elif key == 'H':
             show_heist_planning(state)
-
-        time.sleep(0.05)
 
 def show_shop(state: GameState):
     """Show upgrade shop"""
