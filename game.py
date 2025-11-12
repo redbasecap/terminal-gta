@@ -950,9 +950,10 @@ def minigame_hacking(state: GameState, complexity: int = 3) -> bool:
             draw_panel(height // 2 - 4, lines, center=True)
             sys.stdout.flush()
 
-            # Input
-            key = read_key()
-            if key in "WASD":
+            # Input - use blocking read to avoid double-registering keys
+            key = read_key_blocking(timeout=0.1)
+
+            if key and key in "WASD":
                 current_input.append(key)
 
                 # Check correctness
@@ -961,7 +962,10 @@ def minigame_hacking(state: GameState, complexity: int = 3) -> bool:
                         # Wrong key
                         clear_screen()
                         move_cursor(height // 2, 1)
-                        draw_panel(height // 2, [colorize("INCORRECT SEQUENCE!", Color.BRIGHT_RED)], center=True)
+                        draw_panel(height // 2, [
+                            colorize("INCORRECT SEQUENCE!", Color.BRIGHT_RED),
+                            f"Expected: {sequence[len(current_input) - 1]}, Got: {current_input[-1]}"
+                        ], center=True)
                         time.sleep(2)
                         return False
 
@@ -975,8 +979,8 @@ def minigame_hacking(state: GameState, complexity: int = 3) -> bool:
                     ], center=True)
                     time.sleep(2)
                     return True
-
-            time.sleep(0.05)
+            elif key == 'ESC':
+                return False
 
     finally:
         show_cursor()
