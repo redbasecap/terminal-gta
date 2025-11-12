@@ -1,0 +1,1622 @@
+#!/usr/bin/env python3
+"""
+TERMINAL HEIST - GTA-V-inspired Terminal Game
+==============================================
+
+A text-based, animated heist game with 3 playable protagonists, missions,
+and ASCII animations. Play through tutorials, recruit crew members, plan heists,
+and execute daring robberies!
+
+CONTROLS:
+  Main Menu:   N=New Game, L=Load, E=Exit
+  In-Game:     M=Map, Q=Character Switch, H=Heist Planning, I=Inventory/Shop
+               WASD=Movement, ENTER=Confirm, ESC=Back
+
+REQUIREMENTS:
+  Python 3.10+, Standard library only
+  Works on Windows, macOS, Linux
+
+USAGE:
+  python game.py
+  python game.py --seed 12345  (for deterministic randomness)
+  python game.py --no-color    (accessibility mode)
+
+SAVE FILE:
+  savegame.json (created in same directory)
+"""
+
+# === IMPORTS ===
+import sys
+import os
+import time
+import json
+import random
+import textwrap
+from dataclasses import dataclass, field, asdict
+from typing import Optional, List, Dict, Callable, Any
+from enum import Enum, auto
+import shutil
+
+# === PLATFORM SETUP ===
+
+# Enable ANSI escape sequences on Windows
+if sys.platform == "win32":
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+    except Exception:
+        pass
+
+# Global flags
+USE_COLOR = True
+FRAME_RATE = 12  # FPS for animations
+
+# === ANSI CODES ===
+
+class Color:
+    """ANSI color codes"""
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    INVERT = "\033[7m"
+
+    # Colors
+    BLACK = "\033[30m"
+    RED = "\033[31m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    BLUE = "\033[34m"
+    MAGENTA = "\033[35m"
+    CYAN = "\033[36m"
+    WHITE = "\033[37m"
+
+    # Bright colors
+    BRIGHT_RED = "\033[91m"
+    BRIGHT_GREEN = "\033[92m"
+    BRIGHT_YELLOW = "\033[93m"
+    BRIGHT_BLUE = "\033[94m"
+    BRIGHT_MAGENTA = "\033[95m"
+    BRIGHT_CYAN = "\033[96m"
+    BRIGHT_WHITE = "\033[97m"
+
+    # Backgrounds
+    BG_BLACK = "\033[40m"
+    BG_RED = "\033[41m"
+    BG_GREEN = "\033[42m"
+    BG_YELLOW = "\033[43m"
+    BG_BLUE = "\033[44m"
+    BG_MAGENTA = "\033[45m"
+    BG_CYAN = "\033[46m"
+    BG_WHITE = "\033[47m"
+
+def colorize(text: str, color: str) -> str:
+    """Apply color to text if colors are enabled"""
+    if not USE_COLOR:
+        return text
+    return f"{color}{text}{Color.RESET}"
+
+# === CURSOR CONTROL ===
+
+def clear_screen():
+    """Clear the terminal screen"""
+    if sys.platform == "win32":
+        os.system('cls')
+    else:
+        os.system('clear')
+
+def move_cursor(row: int, col: int):
+    """Move cursor to position (1-indexed)"""
+    print(f"\033[{row};{col}H", end="")
+
+def hide_cursor():
+    """Hide the cursor"""
+    print("\033[?25l", end="")
+
+def show_cursor():
+    """Show the cursor"""
+    print("\033[?25h", end="")
+
+def clear_line():
+    """Clear current line"""
+    print("\033[2K", end="")
+
+# === INPUT HANDLING ===
+
+def get_terminal_size():
+    """Get terminal dimensions"""
+    size = shutil.get_terminal_size((80, 24))
+    return size.lines, size.columns
+
+def read_key() -> str:
+    """Read a single keypress (blocking)"""
+    if sys.platform == "win32":
+        import msvcrt
+        if msvcrt.kbhit():
+            key = msvcrt.getch()
+            return key.decode('utf-8', errors='ignore').upper()
+        return ""
+    else:
+        import select
+        import tty
+        import termios
+
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            # Check if input is available (non-blocking)
+            if select.select([sys.stdin], [], [], 0.01)[0]:
+                key = sys.stdin.read(1)
+                # Handle escape sequences
+                if key == '\x1b':
+                    if select.select([sys.stdin], [], [], 0.01)[0]:
+                        key += sys.stdin.read(2)
+                return key.upper()
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return ""
+
+def wait_for_key(valid_keys: List[str] = None, timeout: float = None) -> str:
+    """Wait for a specific key press"""
+    start_time = time.time()
+    while True:
+        key = read_key()
+        if key:
+            if key == '\x1b':  # ESC
+                return 'ESC'
+            elif key == '\r' or key == '\n':
+                return 'ENTER'
+            elif valid_keys is None or key in valid_keys:
+                return key
+
+        if timeout and (time.time() - start_time > timeout):
+            return ""
+
+        time.sleep(0.05)
+
+# === DATA MODELS ===
+
+class GameMode(Enum):
+    """Game state modes"""
+    MENU = auto()
+    MAP = auto()
+    FREE_ROAM = auto()
+    MISSION = auto()
+    HEIST_PLANNING = auto()
+    SHOP = auto()
+    DRIVING = auto()
+    HACKING = auto()
+    DIALOGUE = auto()
+
+@dataclass
+class CrewMember:
+    """A recruitable crew member"""
+    name: str
+    role: str  # "driver", "hacker", "gunner"
+    skill: int  # 1-10
+    cost: int
+    loyalty: int = 50  # 0-100
+    recruited: bool = False
+    available: bool = True
+
+@dataclass
+class Player:
+    """Player character"""
+    name: str
+    role: str
+    hp: int = 100
+    max_hp: int = 100
+
+    # Perks (multipliers)
+    dodge_bonus: float = 0.0
+    hack_speed_bonus: float = 0.0
+    damage_bonus: float = 0.0
+
+    # Upgrades
+    vehicle_handling: int = 1  # 1-5
+    hacking_level: int = 1     # 1-5
+    armor_level: int = 1       # 1-5
+
+@dataclass
+class Mission:
+    """Mission definition"""
+    id: str
+    name: str
+    description: str
+    required_mission: Optional[str] = None
+    completed: bool = False
+    available: bool = True
+    payout: int = 0
+
+@dataclass
+class CityZone:
+    """A zone on the city map"""
+    name: str
+    x: int
+    y: int
+    char: str
+    color: str
+    missions: List[str] = field(default_factory=list)
+
+@dataclass
+class GameState:
+    """Complete game state"""
+    schema_version: int = 1
+
+    # Player state
+    current_player: int = 0  # Index into players list
+    players: List[Player] = field(default_factory=list)
+    last_char_switch: float = 0.0
+
+    # Progress
+    cash: int = 1000
+    heat: int = 0  # 0-5 stars
+    current_zone: str = "downtown"
+
+    # Missions
+    current_mission: Optional[str] = None
+    completed_missions: List[str] = field(default_factory=list)
+    active_mission_state: Dict[str, Any] = field(default_factory=dict)
+
+    # Crew
+    crew_members: List[CrewMember] = field(default_factory=list)
+
+    # Heist planning
+    heist_plan: Optional[str] = None  # "stealth", "loud", "driver"
+    heist_crew: Dict[str, Optional[str]] = field(default_factory=dict)
+
+    # Game mode
+    mode: str = "MENU"
+
+    # Map cursor
+    map_cursor_x: int = 5
+    map_cursor_y: int = 5
+
+# === GAME DATA ===
+
+def create_initial_players() -> List[Player]:
+    """Create the three protagonists"""
+    return [
+        Player(
+            name="Marek",
+            role="Driver",
+            dodge_bonus=0.2,
+            vehicle_handling=2
+        ),
+        Player(
+            name="Lia",
+            role="Hacker",
+            hack_speed_bonus=0.25,
+            hacking_level=2
+        ),
+        Player(
+            name="Rex",
+            role="Gunner",
+            damage_bonus=0.15,
+            armor_level=2
+        )
+    ]
+
+def create_crew_pool() -> List[CrewMember]:
+    """Create available crew members to recruit"""
+    return [
+        CrewMember("Eddie", "driver", 7, 5000),
+        CrewMember("Nina", "hacker", 8, 7000),
+        CrewMember("Viktor", "gunner", 6, 4000),
+        CrewMember("Jade", "driver", 5, 3000),
+        CrewMember("Zero", "hacker", 9, 10000),
+    ]
+
+def create_missions() -> List[Mission]:
+    """Create all available missions"""
+    return [
+        Mission(
+            id="tutorial",
+            name="First Wheels",
+            description="Steal a car and escape the cops. Learn the basics.",
+            payout=500
+        ),
+        Mission(
+            id="recruit_crew",
+            name="Building the Team",
+            description="Find and recruit crew members for future heists.",
+            required_mission="tutorial",
+            payout=1000
+        ),
+        Mission(
+            id="mini_heist",
+            name="Small Time Score",
+            description="Rob a convenience store. Choose your approach.",
+            required_mission="recruit_crew",
+            payout=5000
+        ),
+        Mission(
+            id="prep_arcadia",
+            name="Arcadia Prep",
+            description="Scout the Arcadia vault and gather intel.",
+            required_mission="mini_heist",
+            payout=2000
+        ),
+        Mission(
+            id="arcadia_heist",
+            name="The Arcadia Job",
+            description="The big one. Rob the Arcadia vault.",
+            required_mission="prep_arcadia",
+            payout=100000
+        )
+    ]
+
+def create_city_zones() -> List[CityZone]:
+    """Create city map zones"""
+    return [
+        CityZone("Harbor", 2, 2, "H", Color.BLUE, ["mini_heist"]),
+        CityZone("Downtown", 5, 5, "D", Color.YELLOW, ["tutorial", "arcadia_heist"]),
+        CityZone("Suburbs", 8, 3, "S", Color.GREEN, ["recruit_crew"]),
+        CityZone("Industrial", 7, 8, "I", Color.RED, ["prep_arcadia"]),
+    ]
+
+# === RENDER SYSTEM ===
+
+def draw_box(x: int, y: int, width: int, height: int, title: str = ""):
+    """Draw a box at position"""
+    move_cursor(y, x)
+    print("┌" + "─" * (width - 2) + "┐", end="")
+
+    for i in range(1, height - 1):
+        move_cursor(y + i, x)
+        print("│" + " " * (width - 2) + "│", end="")
+
+    move_cursor(y + height - 1, x)
+    print("└" + "─" * (width - 2) + "┘", end="")
+
+    if title:
+        move_cursor(y, x + 2)
+        print(f"[ {title} ]", end="")
+
+def draw_hud(state: GameState):
+    """Draw the HUD at the top of screen"""
+    height, width = get_terminal_size()
+
+    move_cursor(1, 1)
+    clear_line()
+
+    player = state.players[state.current_player]
+    hp_bar = "█" * (player.hp // 10) + "░" * ((100 - player.hp) // 10)
+    heat_stars = "★" * state.heat + "☆" * (5 - state.heat)
+
+    hud = f" {colorize(player.name, Color.BRIGHT_CYAN)} | "
+    hud += f"{colorize('HP:', Color.GREEN)} {hp_bar} | "
+    hud += f"{colorize('$', Color.YELLOW)}{state.cash:,} | "
+    hud += f"{colorize('HEAT:', Color.RED)} {heat_stars}"
+
+    if state.current_mission:
+        mission = next((m for m in create_missions() if m.id == state.current_mission), None)
+        if mission:
+            hud += f" | {colorize('MISSION:', Color.CYAN)} {mission.name}"
+
+    print(hud[:width-1], end="")
+    sys.stdout.flush()
+
+def draw_panel(y: int, lines: List[str], center: bool = False):
+    """Draw a text panel"""
+    height, width = get_terminal_size()
+
+    for i, line in enumerate(lines):
+        if y + i >= height:
+            break
+        move_cursor(y + i, 1)
+        clear_line()
+        if center:
+            padding = (width - len(line)) // 2
+            print(" " * padding + line, end="")
+        else:
+            print(line[:width-1], end="")
+
+    sys.stdout.flush()
+
+def animate_transition(text: str = ""):
+    """Wipe transition effect"""
+    height, width = get_terminal_size()
+
+    for i in range(3, height):
+        move_cursor(i, 1)
+        print("█" * width, end="")
+        sys.stdout.flush()
+        time.sleep(0.02)
+
+    time.sleep(0.3)
+    clear_screen()
+
+    if text:
+        move_cursor(height // 2, 1)
+        draw_panel(height // 2, [text], center=True)
+        time.sleep(1)
+
+# === MINIGAME: DRIVING ===
+
+def minigame_driving(state: GameState, duration: int = 15, difficulty: int = 1) -> bool:
+    """
+    Driving minigame with scrolling road and obstacles.
+    Returns True if successful, False if crashed/caught.
+    """
+    height, width = get_terminal_size()
+
+    player = state.players[state.current_player]
+    handling = player.vehicle_handling + (0.2 if player.dodge_bonus > 0 else 0)
+
+    # Game state
+    player_lane = 1  # 0=left, 1=center, 2=right
+    score = 0
+    obstacles = []  # (row, lane)
+    hp = 100
+
+    start_time = time.time()
+    last_spawn = time.time()
+    frame = 0
+
+    hide_cursor()
+
+    try:
+        while time.time() - start_time < duration:
+            frame += 1
+            clear_screen()
+
+            # Draw HUD
+            elapsed = int(time.time() - start_time)
+            remaining = duration - elapsed
+
+            move_cursor(1, 1)
+            print(colorize(f"DRIVING: {remaining}s remaining | HP: {'█' * (hp // 10)} | Score: {score}", Color.BRIGHT_YELLOW))
+
+            # Spawn obstacles
+            if time.time() - last_spawn > max(0.5, 1.5 - difficulty * 0.2):
+                lane = random.randint(0, 2)
+                obstacles.append([3, lane])
+                last_spawn = time.time()
+
+            # Move obstacles
+            new_obstacles = []
+            for obs in obstacles:
+                obs[0] += 1
+                if obs[0] < height - 3:
+                    new_obstacles.append(obs)
+                elif obs[0] == height - 3:
+                    # Check collision
+                    if obs[1] == player_lane:
+                        # Dodge check
+                        if random.random() > handling * 0.3:
+                            hp -= 20
+                            move_cursor(height // 2, width // 2 - 5)
+                            print(colorize("*CRASH*", Color.BRIGHT_RED))
+                        else:
+                            score += 10
+                            move_cursor(height // 2, width // 2 - 5)
+                            print(colorize("*DODGE*", Color.BRIGHT_GREEN))
+                    else:
+                        score += 5
+            obstacles = new_obstacles
+
+            if hp <= 0:
+                move_cursor(height // 2, 1)
+                draw_panel(height // 2, ["CAR DESTROYED!"], center=True)
+                time.sleep(2)
+                return False
+
+            # Draw road
+            road_width = 15
+            road_start = (width - road_width) // 2
+
+            for row in range(3, height - 2):
+                move_cursor(row, road_start)
+
+                # Lane markers
+                if row % 3 == frame % 3:
+                    print(colorize("║  |  |  ║", Color.WHITE))
+                else:
+                    print(colorize("║     |  ║", Color.WHITE))
+
+            # Draw obstacles
+            for obs_row, obs_lane in obstacles:
+                if 3 <= obs_row < height - 2:
+                    obs_x = road_start + 2 + obs_lane * 5
+                    move_cursor(obs_row, obs_x)
+                    print(colorize("XXX", Color.RED))
+
+            # Draw player car
+            car_row = height - 3
+            car_x = road_start + 2 + player_lane * 5
+            move_cursor(car_row, car_x)
+            print(colorize("═╬═", Color.BRIGHT_CYAN))
+
+            # Instructions
+            move_cursor(height - 1, 1)
+            print(colorize("A=Left | D=Right | ESC=Abort", Color.DIM))
+
+            sys.stdout.flush()
+
+            # Input
+            key = read_key()
+            if key == 'A' and player_lane > 0:
+                player_lane -= 1
+            elif key == 'D' and player_lane < 2:
+                player_lane += 1
+            elif key == 'ESC' or key == '\x1b':
+                return False
+
+            time.sleep(1 / FRAME_RATE)
+
+        # Success!
+        move_cursor(height // 2, 1)
+        draw_panel(height // 2, [
+            colorize("ESCAPE SUCCESSFUL!", Color.BRIGHT_GREEN),
+            f"Score: {score}"
+        ], center=True)
+        time.sleep(2)
+        return True
+
+    finally:
+        show_cursor()
+
+# === MINIGAME: HACKING ===
+
+def minigame_hacking(state: GameState, complexity: int = 3) -> bool:
+    """
+    Hacking minigame with timed sequence matching.
+    Returns True if successful, False if failed.
+    """
+    height, width = get_terminal_size()
+
+    player = state.players[state.current_player]
+    hack_speed = player.hacking_level * (1 + player.hack_speed_bonus)
+
+    # Generate sequence
+    sequence = [random.choice("WASD") for _ in range(complexity)]
+    time_limit = max(2, 5 - hack_speed)
+
+    current_input = []
+    start_time = time.time()
+
+    hide_cursor()
+
+    try:
+        while True:
+            elapsed = time.time() - start_time
+            remaining = max(0, time_limit - elapsed)
+
+            if remaining <= 0:
+                clear_screen()
+                move_cursor(height // 2, 1)
+                draw_panel(height // 2, [colorize("HACK FAILED - TIMEOUT!", Color.BRIGHT_RED)], center=True)
+                time.sleep(2)
+                return False
+
+            clear_screen()
+
+            # Draw UI
+            progress = int((1 - remaining / time_limit) * 40)
+            bar = colorize("█" * progress, Color.GREEN) + colorize("░" * (40 - progress), Color.DIM)
+
+            lines = [
+                colorize("=== HACKING TERMINAL ===", Color.BRIGHT_CYAN),
+                "",
+                f"Time: {bar} {remaining:.1f}s",
+                "",
+                f"Sequence: {' '.join(sequence)}",
+                f"Input:    {' '.join(current_input)}{'_' * (len(sequence) - len(current_input))}",
+                "",
+                colorize("Type the sequence using W, A, S, D", Color.YELLOW)
+            ]
+
+            draw_panel(height // 2 - 4, lines, center=True)
+            sys.stdout.flush()
+
+            # Input
+            key = read_key()
+            if key in "WASD":
+                current_input.append(key)
+
+                # Check correctness
+                if len(current_input) <= len(sequence):
+                    if current_input[-1] != sequence[len(current_input) - 1]:
+                        # Wrong key
+                        clear_screen()
+                        move_cursor(height // 2, 1)
+                        draw_panel(height // 2, [colorize("INCORRECT SEQUENCE!", Color.BRIGHT_RED)], center=True)
+                        time.sleep(2)
+                        return False
+
+                # Check completion
+                if len(current_input) == len(sequence):
+                    clear_screen()
+                    move_cursor(height // 2, 1)
+                    draw_panel(height // 2, [
+                        colorize("HACK SUCCESSFUL!", Color.BRIGHT_GREEN),
+                        colorize("Access granted...", Color.GREEN)
+                    ], center=True)
+                    time.sleep(2)
+                    return True
+
+            time.sleep(0.05)
+
+    finally:
+        show_cursor()
+
+# === MISSIONS ===
+
+def mission_tutorial(state: GameState) -> bool:
+    """Tutorial mission: Steal a car and escape"""
+    height, width = get_terminal_size()
+
+    # Story intro
+    clear_screen()
+    draw_hud(state)
+
+    story = [
+        "",
+        colorize("=== FIRST WHEELS ===", Color.BRIGHT_YELLOW),
+        "",
+        "You need cash, and fast.",
+        "Time to borrow a car... permanently.",
+        "",
+        colorize("Press ENTER to continue", Color.DIM)
+    ]
+
+    draw_panel(5, story, center=True)
+    wait_for_key(['ENTER'])
+
+    # Choice
+    clear_screen()
+    draw_hud(state)
+
+    choice_text = [
+        "",
+        "You spot two cars:",
+        "",
+        colorize("1)", Color.YELLOW) + " Sports car (fast, but alarm)",
+        colorize("2)", Color.YELLOW) + " Old sedan (slow, quiet)",
+        "",
+        "Your choice? (1/2)"
+    ]
+
+    draw_panel(5, choice_text, center=True)
+    choice = wait_for_key(['1', '2'])
+
+    if choice == '1':
+        state.heat = 2
+        difficulty = 2
+        animate_transition("*ALARM BLARING*")
+    else:
+        state.heat = 1
+        difficulty = 1
+        animate_transition("You hot-wire the sedan...")
+
+    # Driving minigame
+    success = minigame_driving(state, duration=10, difficulty=difficulty)
+
+    if success:
+        state.cash += 500
+        state.completed_missions.append("tutorial")
+
+        clear_screen()
+        draw_hud(state)
+
+        success_text = [
+            "",
+            colorize("MISSION COMPLETE!", Color.BRIGHT_GREEN),
+            "",
+            f"Earned: {colorize('$500', Color.YELLOW)}",
+            "You've got the skills. Time to aim higher.",
+            "",
+            colorize("Press ENTER", Color.DIM)
+        ]
+
+        draw_panel(8, success_text, center=True)
+        wait_for_key(['ENTER'])
+
+        # Reset heat
+        state.heat = 0
+        return True
+    else:
+        # Failed but continue (fail-forward)
+        state.cash += 100
+        state.completed_missions.append("tutorial")
+        state.players[state.current_player].hp = 50
+
+        clear_screen()
+        draw_hud(state)
+
+        fail_text = [
+            "",
+            colorize("WRECKED!", Color.RED),
+            "",
+            "You barely escaped, but at least you learned something.",
+            f"Earned: {colorize('$100', Color.YELLOW)}",
+            "",
+            colorize("Press ENTER", Color.DIM)
+        ]
+
+        draw_panel(8, fail_text, center=True)
+        wait_for_key(['ENTER'])
+
+        state.heat = 0
+        return True
+
+def mission_recruit_crew(state: GameState) -> bool:
+    """Mission: Find and recruit crew members"""
+    height, width = get_terminal_size()
+
+    clear_screen()
+    draw_hud(state)
+
+    story = [
+        "",
+        colorize("=== BUILDING THE TEAM ===", Color.BRIGHT_YELLOW),
+        "",
+        "You can't pull big jobs alone.",
+        "Time to assemble a crew.",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+
+    draw_panel(5, story, center=True)
+    wait_for_key(['ENTER'])
+
+    # Show available crew
+    available_crew = [c for c in state.crew_members if not c.recruited and c.available]
+
+    if not available_crew:
+        # Initialize crew pool if empty
+        state.crew_members = create_crew_pool()
+        available_crew = state.crew_members[:3]
+
+    recruited_count = 0
+
+    for crew in available_crew[:3]:  # Show 3 options
+        clear_screen()
+        draw_hud(state)
+
+        crew_info = [
+            "",
+            colorize(f"Meet {crew.name}", Color.BRIGHT_CYAN),
+            "",
+            f"Role: {colorize(crew.role.upper(), Color.YELLOW)}",
+            f"Skill: {colorize('★' * crew.skill + '☆' * (10 - crew.skill), Color.YELLOW)}",
+            f"Cost: {colorize(f'${crew.cost:,}', Color.YELLOW)}",
+            "",
+            "1) Recruit (pay upfront)",
+            "2) Skip",
+            "",
+            f"Your cash: {colorize(f'${state.cash:,}', Color.GREEN)}"
+        ]
+
+        draw_panel(5, crew_info, center=True)
+        choice = wait_for_key(['1', '2'])
+
+        if choice == '1' and state.cash >= crew.cost:
+            state.cash -= crew.cost
+            crew.recruited = True
+            crew.loyalty = 60
+            recruited_count += 1
+
+            animate_transition(f"{crew.name} joined the crew!")
+        elif choice == '1':
+            animate_transition("Not enough cash!")
+
+    # Complete mission
+    state.completed_missions.append("recruit_crew")
+    state.cash += 1000
+
+    clear_screen()
+    draw_hud(state)
+
+    result = [
+        "",
+        colorize("MISSION COMPLETE!", Color.BRIGHT_GREEN),
+        "",
+        f"Recruited: {recruited_count} crew members",
+        f"Reward: {colorize('$1,000', Color.YELLOW)}",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+
+    draw_panel(8, result, center=True)
+    wait_for_key(['ENTER'])
+
+    return True
+
+def mission_mini_heist(state: GameState) -> bool:
+    """Mini heist with three approach options"""
+    height, width = get_terminal_size()
+
+    clear_screen()
+    draw_hud(state)
+
+    story = [
+        "",
+        colorize("=== SMALL TIME SCORE ===", Color.BRIGHT_YELLOW),
+        "",
+        "A jewelry store, light security.",
+        "Time to test your skills.",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+
+    draw_panel(5, story, center=True)
+    wait_for_key(['ENTER'])
+
+    # Approach selection
+    clear_screen()
+    draw_hud(state)
+
+    approaches = [
+        "",
+        colorize("Choose your approach:", Color.BRIGHT_CYAN),
+        "",
+        colorize("1) STEALTH", Color.GREEN) + " - Hack the alarm, sneak in",
+        colorize("2) LOUD", Color.RED) + " - Smash and grab, fast escape",
+        colorize("3) DRIVER", Color.YELLOW) + " - Distraction, quick getaway",
+        "",
+        "Your choice? (1/2/3)"
+    ]
+
+    draw_panel(6, approaches, center=True)
+    choice = wait_for_key(['1', '2', '3'])
+
+    success = False
+    payout = 5000
+
+    if choice == '1':
+        # Stealth = hacking
+        animate_transition("Bypassing alarm system...")
+        success = minigame_hacking(state, complexity=3)
+        if success:
+            state.heat = 0
+            payout = 7000  # Bonus for stealth
+        else:
+            state.heat = 3
+            payout = 2000
+
+    elif choice == '2':
+        # Loud = driving escape
+        animate_transition("*SMASH* Grab everything!")
+        state.heat = 4
+        success = minigame_driving(state, duration=12, difficulty=3)
+        if success:
+            payout = 6000
+        else:
+            payout = 3000
+
+    else:
+        # Driver approach
+        animate_transition("Creating diversion...")
+        state.heat = 2
+        success = minigame_driving(state, duration=10, difficulty=2)
+        if success:
+            payout = 5000
+        else:
+            payout = 2500
+
+    # Complete mission
+    state.completed_missions.append("mini_heist")
+    state.cash += payout
+
+    clear_screen()
+    draw_hud(state)
+
+    result = [
+        "",
+        colorize("JOB DONE!", Color.BRIGHT_GREEN) if success else colorize("BARELY ESCAPED!", Color.YELLOW),
+        "",
+        f"Earned: {colorize(f'${payout:,}', Color.YELLOW)}",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+
+    draw_panel(8, result, center=True)
+    wait_for_key(['ENTER'])
+
+    # Decay heat
+    state.heat = max(0, state.heat - 1)
+
+    return True
+
+def mission_prep_arcadia(state: GameState) -> bool:
+    """Prep mission for the big heist"""
+    height, width = get_terminal_size()
+
+    clear_screen()
+    draw_hud(state)
+
+    story = [
+        "",
+        colorize("=== ARCADIA PREP ===", Color.BRIGHT_YELLOW),
+        "",
+        "The Arcadia vault. Big score.",
+        "But first, you need intel.",
+        "",
+        colorize("Press ENTER", Color.DIM)
+    ]
+
+    draw_panel(5, story, center=True)
+    wait_for_key(['ENTER'])
+
+    # Intel gathering (simple hacking)
+    animate_transition("Accessing security network...")
+
+    success = minigame_hacking(state, complexity=4)
+
+    if success:
+        clear_screen()
+        draw_hud(state)
+
+        intel = [
+            "",
+            colorize("INTEL ACQUIRED", Color.BRIGHT_GREEN),
+            "",
+            "• Vault has biometric locks",
+            "• Guard rotation every 4 hours",
+            "• Three entry points discovered",
+            "• Backup power system identified",
+            "",
+            "You're ready for the big job.",
+            "",
+            colorize("Press ENTER", Color.DIM)
+        ]
+
+        draw_panel(6, intel, center=True)
+        wait_for_key(['ENTER'])
+
+    state.completed_missions.append("prep_arcadia")
+    state.cash += 2000
+
+    return True
+
+def mission_arcadia_heist(state: GameState) -> bool:
+    """The big heist with planning and execution"""
+    height, width = get_terminal_size()
+
+    # === PLANNING PHASE ===
+    clear_screen()
+    draw_hud(state)
+
+    planning = [
+        "",
+        colorize("=== THE ARCADIA JOB ===", Color.BRIGHT_YELLOW),
+        "",
+        "This is it. The big one.",
+        "Plan carefully.",
+        "",
+        colorize("Press ENTER to plan", Color.DIM)
+    ]
+
+    draw_panel(5, planning, center=True)
+    wait_for_key(['ENTER'])
+
+    # Choose approach
+    clear_screen()
+    draw_hud(state)
+
+    approaches = [
+        "",
+        colorize("Choose your approach:", Color.BRIGHT_CYAN),
+        "",
+        colorize("1) STEALTH", Color.GREEN) + " - Hack systems, silent entry (high skill)",
+        colorize("2) LOUD", Color.RED) + " - Heavy weapons, smash through (high risk)",
+        colorize("3) DRIVER", Color.YELLOW) + " - Fast in/out, focus on escape (balanced)",
+        "",
+        "Your choice? (1/2/3)"
+    ]
+
+    draw_panel(6, approaches, center=True)
+    approach = wait_for_key(['1', '2', '3'])
+
+    if approach == '1':
+        state.heist_plan = "stealth"
+        animate_transition("Planning stealth approach...")
+    elif approach == '2':
+        state.heist_plan = "loud"
+        animate_transition("Planning loud approach...")
+    else:
+        state.heist_plan = "driver"
+        animate_transition("Planning driver approach...")
+
+    # Assign crew
+    recruited_crew = [c for c in state.crew_members if c.recruited]
+
+    if recruited_crew:
+        clear_screen()
+        draw_hud(state)
+
+        crew_list = [
+            "",
+            colorize("Assign crew members:", Color.BRIGHT_CYAN),
+            ""
+        ]
+
+        for i, crew in enumerate(recruited_crew[:3], 1):
+            crew_list.append(f"{i}) {crew.name} - {crew.role.upper()} (Skill: {crew.skill})")
+
+        crew_list.append("")
+        crew_list.append("Selection (e.g., 1,2) or ENTER to skip:")
+
+        draw_panel(6, crew_list, center=True)
+
+        # Simple selection (just press ENTER for now)
+        wait_for_key(['ENTER'])
+
+    # === EXECUTION PHASE ===
+
+    animate_transition("Executing heist...")
+
+    success_stage_1 = False
+    success_stage_2 = False
+    base_payout = 100000
+
+    # Stage 1: Entry
+    if state.heist_plan == "stealth":
+        clear_screen()
+        draw_hud(state)
+        draw_panel(10, [colorize("Stage 1: Bypassing security...", Color.CYAN)], center=True)
+        time.sleep(2)
+        success_stage_1 = minigame_hacking(state, complexity=5)
+
+        if not success_stage_1:
+            state.heat = 5
+            base_payout //= 2
+            animate_transition("ALARM TRIGGERED!")
+        else:
+            state.heat = 1
+            base_payout = int(base_payout * 1.5)
+
+    elif state.heist_plan == "loud":
+        animate_transition("Stage 1: Breaching vault!")
+        state.heat = 5
+        success_stage_1 = True  # Always succeeds but high heat
+
+    else:  # driver
+        animate_transition("Stage 1: Creating diversion!")
+        state.heat = 3
+        success_stage_1 = True
+
+    # Stage 2: Escape
+    clear_screen()
+    draw_hud(state)
+    draw_panel(10, [colorize("Stage 2: ESCAPE!", Color.BRIGHT_RED)], center=True)
+    time.sleep(2)
+
+    escape_duration = 20 if state.heat >= 4 else 15
+    success_stage_2 = minigame_driving(state, duration=escape_duration, difficulty=state.heat)
+
+    if not success_stage_2:
+        base_payout //= 3
+        state.players[state.current_player].hp = 30
+
+    # Calculate final payout
+    final_payout = base_payout
+
+    # Apply crew bonuses
+    for crew in recruited_crew:
+        if crew.recruited:
+            final_payout += crew.skill * 1000
+
+    # Complete mission
+    state.completed_missions.append("arcadia_heist")
+    state.cash += final_payout
+
+    # Results
+    clear_screen()
+    draw_hud(state)
+
+    if success_stage_1 and success_stage_2:
+        result = [
+            "",
+            colorize("╔═══════════════════════════╗", Color.BRIGHT_GREEN),
+            colorize("║  HEIST COMPLETE - FLAWLESS  ║", Color.BRIGHT_GREEN),
+            colorize("╚═══════════════════════════╝", Color.BRIGHT_GREEN),
+            "",
+            f"Total Payout: {colorize(f'${final_payout:,}', Color.BRIGHT_YELLOW)}",
+            "",
+            "You're a legend now.",
+            "",
+            colorize("Press ENTER", Color.DIM)
+        ]
+    else:
+        result = [
+            "",
+            colorize("HEIST COMPLETE - MESSY", Color.YELLOW),
+            "",
+            f"Payout: {colorize(f'${final_payout:,}', Color.YELLOW)}",
+            "",
+            "You got away... barely.",
+            "",
+            colorize("Press ENTER", Color.DIM)
+        ]
+
+    draw_panel(7, result, center=True)
+    wait_for_key(['ENTER'])
+
+    # Reduce heat over time
+    state.heat = max(0, state.heat - 2)
+
+    return True
+
+# === GAME MODES ===
+
+def show_main_menu(state: GameState) -> str:
+    """Show main menu and return choice"""
+    height, width = get_terminal_size()
+
+    clear_screen()
+
+    title = [
+        "",
+        colorize("╔════════════════════════════════╗", Color.BRIGHT_CYAN),
+        colorize("║      TERMINAL HEIST            ║", Color.BRIGHT_CYAN),
+        colorize("║                                ║", Color.BRIGHT_CYAN),
+        colorize("║  GTA-inspired Heist Game       ║", Color.YELLOW),
+        colorize("╚════════════════════════════════╝", Color.BRIGHT_CYAN),
+        "",
+        "",
+        colorize("N", Color.BRIGHT_YELLOW) + ") New Game",
+        colorize("L", Color.BRIGHT_YELLOW) + ") Load Game",
+        colorize("E", Color.BRIGHT_YELLOW) + ") Exit",
+        "",
+        "",
+        colorize("Your choice?", Color.DIM)
+    ]
+
+    draw_panel(3, title, center=True)
+
+    choice = wait_for_key(['N', 'L', 'E'])
+    return choice
+
+def show_map(state: GameState):
+    """Show city map with zones"""
+    height, width = get_terminal_size()
+
+    zones = create_city_zones()
+    missions = create_missions()
+
+    while True:
+        clear_screen()
+        draw_hud(state)
+
+        # Draw map grid
+        map_size = 12
+        map_start_y = 4
+        map_start_x = (width - map_size * 2) // 2
+
+        move_cursor(map_start_y - 1, map_start_x)
+        print(colorize("=== CITY MAP ===", Color.BRIGHT_CYAN))
+
+        # Draw grid
+        for y in range(map_size):
+            move_cursor(map_start_y + y, map_start_x)
+            for x in range(map_size):
+                char = "·"
+                color = Color.DIM
+
+                # Check for zones
+                for zone in zones:
+                    if zone.x == x and zone.y == y:
+                        char = zone.char
+                        color = zone.color
+                        break
+
+                # Check for cursor
+                if x == state.map_cursor_x and y == state.map_cursor_y:
+                    print(colorize("█", Color.BRIGHT_WHITE), end=" ")
+                else:
+                    print(colorize(char, color), end=" ")
+
+        # Show zone info
+        current_zone = None
+        for zone in zones:
+            if zone.x == state.map_cursor_x and zone.y == state.map_cursor_y:
+                current_zone = zone
+                break
+
+        info_y = map_start_y + map_size + 2
+
+        if current_zone:
+            info = [
+                f"Location: {colorize(current_zone.name, Color.BRIGHT_YELLOW)}",
+                ""
+            ]
+
+            # Show available missions
+            available = False
+            for mission_id in current_zone.missions:
+                mission = next((m for m in missions if m.id == mission_id), None)
+                if mission and mission_id not in state.completed_missions:
+                    # Check if required mission is complete
+                    if not mission.required_mission or mission.required_mission in state.completed_missions:
+                        info.append(colorize(f"► {mission.name}", Color.GREEN))
+                        available = True
+
+            if available:
+                info.append("")
+                info.append(colorize("Press ENTER to start mission", Color.YELLOW))
+
+            draw_panel(info_y, info, center=True)
+        else:
+            draw_panel(info_y, ["Move cursor to a location"], center=True)
+
+        # Controls
+        move_cursor(height - 2, 1)
+        print(colorize("WASD=Move | ENTER=Select | ESC=Back | Q=Char Switch | I=Shop", Color.DIM))
+
+        sys.stdout.flush()
+
+        # Input
+        key = read_key()
+
+        if key == 'W' and state.map_cursor_y > 0:
+            state.map_cursor_y -= 1
+        elif key == 'S' and state.map_cursor_y < map_size - 1:
+            state.map_cursor_y += 1
+        elif key == 'A' and state.map_cursor_x > 0:
+            state.map_cursor_x -= 1
+        elif key == 'D' and state.map_cursor_x < map_size - 1:
+            state.map_cursor_x += 1
+        elif key == 'ENTER' or key == '\r':
+            # Start mission if available
+            if current_zone:
+                for mission_id in current_zone.missions:
+                    mission = next((m for m in missions if m.id == mission_id), None)
+                    if mission and mission_id not in state.completed_missions:
+                        if not mission.required_mission or mission.required_mission in state.completed_missions:
+                            state.current_mission = mission_id
+                            start_mission(state, mission_id)
+                            break
+        elif key == 'ESC' or key == '\x1b':
+            break
+        elif key == 'Q':
+            try_character_switch(state)
+        elif key == 'I':
+            show_shop(state)
+        elif key == 'H':
+            show_heist_planning(state)
+
+        time.sleep(0.05)
+
+def show_shop(state: GameState):
+    """Show upgrade shop"""
+    height, width = get_terminal_size()
+
+    upgrades = [
+        ("Vehicle Handling", "vehicle_handling", 2000, 5),
+        ("Hacking Level", "hacking_level", 3000, 5),
+        ("Armor Level", "armor_level", 2500, 5),
+        ("Med Kit (Restore 50 HP)", "medkit", 500, 999),
+    ]
+
+    while True:
+        clear_screen()
+        draw_hud(state)
+
+        player = state.players[state.current_player]
+
+        shop_lines = [
+            "",
+            colorize("=== UPGRADE SHOP ===", Color.BRIGHT_CYAN),
+            "",
+            f"Your Cash: {colorize(f'${state.cash:,}', Color.YELLOW)}",
+            ""
+        ]
+
+        for i, (name, attr, cost, max_level) in enumerate(upgrades, 1):
+            if attr == "medkit":
+                shop_lines.append(f"{i}) {name} - {colorize(f'${cost}', Color.YELLOW)}")
+            else:
+                current = getattr(player, attr)
+                if current < max_level:
+                    shop_lines.append(f"{i}) {name} Lv{current} → Lv{current+1} - {colorize(f'${cost}', Color.YELLOW)}")
+                else:
+                    shop_lines.append(f"{i}) {name} - {colorize('MAX', Color.GREEN)}")
+
+        shop_lines.append("")
+        shop_lines.append(colorize("Choose upgrade (1-4) or ESC to exit", Color.DIM))
+
+        draw_panel(5, shop_lines, center=True)
+
+        choice = wait_for_key(['1', '2', '3', '4', 'ESC', '\x1b'])
+
+        if choice in ['ESC', '\x1b']:
+            break
+
+        if choice in ['1', '2', '3', '4']:
+            idx = int(choice) - 1
+            name, attr, cost, max_level = upgrades[idx]
+
+            if attr == "medkit":
+                if state.cash >= cost:
+                    state.cash -= cost
+                    player.hp = min(player.max_hp, player.hp + 50)
+                    animate_transition("HP Restored!")
+                else:
+                    animate_transition("Not enough cash!")
+            else:
+                current = getattr(player, attr)
+                if current < max_level and state.cash >= cost:
+                    state.cash -= cost
+                    setattr(player, attr, current + 1)
+                    animate_transition(f"{name} upgraded!")
+                elif current >= max_level:
+                    animate_transition("Already at max level!")
+                else:
+                    animate_transition("Not enough cash!")
+
+        time.sleep(0.1)
+
+def show_heist_planning(state: GameState):
+    """Show heist planning screen"""
+    height, width = get_terminal_size()
+
+    # Check if Arcadia prep is complete
+    if "prep_arcadia" not in state.completed_missions:
+        animate_transition("No heists available yet!")
+        return
+
+    if "arcadia_heist" in state.completed_missions:
+        animate_transition("You already completed the big heist!")
+        return
+
+    clear_screen()
+    draw_hud(state)
+
+    planning = [
+        "",
+        colorize("=== HEIST PLANNING ===", Color.BRIGHT_CYAN),
+        "",
+        "Ready to hit the Arcadia vault?",
+        "",
+        colorize("1)", Color.YELLOW) + " Start the heist",
+        colorize("2)", Color.YELLOW) + " Not yet",
+        ""
+    ]
+
+    draw_panel(8, planning, center=True)
+
+    choice = wait_for_key(['1', '2'])
+
+    if choice == '1':
+        state.current_mission = "arcadia_heist"
+        start_mission(state, "arcadia_heist")
+
+def try_character_switch(state: GameState):
+    """Try to switch character with cooldown"""
+    current_time = time.time()
+    cooldown = 10.0
+
+    if current_time - state.last_char_switch < cooldown:
+        remaining = cooldown - (current_time - state.last_char_switch)
+        animate_transition(f"Character switch on cooldown: {remaining:.1f}s")
+        return
+
+    # Switch to next character
+    state.current_player = (state.current_player + 1) % len(state.players)
+    state.last_char_switch = current_time
+
+    player = state.players[state.current_player]
+    animate_transition(f"Switched to {player.name} ({player.role})")
+
+def start_mission(state: GameState, mission_id: str):
+    """Start a specific mission"""
+    mission_funcs = {
+        "tutorial": mission_tutorial,
+        "recruit_crew": mission_recruit_crew,
+        "mini_heist": mission_mini_heist,
+        "prep_arcadia": mission_prep_arcadia,
+        "arcadia_heist": mission_arcadia_heist,
+    }
+
+    func = mission_funcs.get(mission_id)
+    if func:
+        state.current_mission = mission_id
+        func(state)
+        state.current_mission = None
+
+        # HP regeneration after mission
+        for player in state.players:
+            player.hp = min(player.max_hp, player.hp + 20)
+
+# === PERSISTENCE ===
+
+def save_game(state: GameState, filename: str = "savegame.json"):
+    """Save game state to JSON"""
+    try:
+        # Convert to dict
+        data = {
+            "schema_version": state.schema_version,
+            "current_player": state.current_player,
+            "players": [asdict(p) for p in state.players],
+            "last_char_switch": state.last_char_switch,
+            "cash": state.cash,
+            "heat": state.heat,
+            "current_zone": state.current_zone,
+            "current_mission": state.current_mission,
+            "completed_missions": state.completed_missions,
+            "active_mission_state": state.active_mission_state,
+            "crew_members": [asdict(c) for c in state.crew_members],
+            "heist_plan": state.heist_plan,
+            "heist_crew": state.heist_crew,
+            "mode": state.mode,
+            "map_cursor_x": state.map_cursor_x,
+            "map_cursor_y": state.map_cursor_y,
+        }
+
+        with open(filename, 'w') as f:
+            json.dump(data, f, indent=2)
+
+        return True
+    except Exception as e:
+        print(f"Save failed: {e}")
+        return False
+
+def load_game(filename: str = "savegame.json") -> Optional[GameState]:
+    """Load game state from JSON"""
+    try:
+        if not os.path.exists(filename):
+            return None
+
+        with open(filename, 'r') as f:
+            data = json.load(f)
+
+        # Reconstruct state
+        state = GameState()
+        state.schema_version = data.get("schema_version", 1)
+        state.current_player = data.get("current_player", 0)
+
+        # Reconstruct players
+        state.players = [Player(**p) for p in data.get("players", [])]
+        if not state.players:
+            state.players = create_initial_players()
+
+        state.last_char_switch = data.get("last_char_switch", 0.0)
+        state.cash = data.get("cash", 1000)
+        state.heat = data.get("heat", 0)
+        state.current_zone = data.get("current_zone", "downtown")
+        state.current_mission = data.get("current_mission")
+        state.completed_missions = data.get("completed_missions", [])
+        state.active_mission_state = data.get("active_mission_state", {})
+
+        # Reconstruct crew
+        state.crew_members = [CrewMember(**c) for c in data.get("crew_members", [])]
+        if not state.crew_members:
+            state.crew_members = create_crew_pool()
+
+        state.heist_plan = data.get("heist_plan")
+        state.heist_crew = data.get("heist_crew", {})
+        state.mode = data.get("mode", "MENU")
+        state.map_cursor_x = data.get("map_cursor_x", 5)
+        state.map_cursor_y = data.get("map_cursor_y", 5)
+
+        return state
+
+    except Exception as e:
+        print(f"Load failed: {e}")
+        return None
+
+# === MAIN GAME LOOP ===
+
+def new_game() -> GameState:
+    """Create a new game state"""
+    state = GameState()
+    state.players = create_initial_players()
+    state.crew_members = create_crew_pool()
+    state.mode = "MAP"
+    state.cash = 1000
+    state.heat = 0
+    state.current_player = 0
+    state.completed_missions = []
+
+    # Show intro
+    height, width = get_terminal_size()
+    clear_screen()
+
+    intro = [
+        "",
+        colorize("Welcome to Terminal Heist", Color.BRIGHT_CYAN),
+        "",
+        "You are a crew of three:",
+        "",
+        colorize("MAREK", Color.YELLOW) + " - The Driver (+20% dodge)",
+        colorize("LIA", Color.YELLOW) + " - The Hacker (-25% hack time)",
+        colorize("REX", Color.YELLOW) + " - The Gunner (+15% damage)",
+        "",
+        "Build your crew, plan heists, get rich.",
+        "",
+        colorize("Press ENTER to start", Color.DIM)
+    ]
+
+    draw_panel(5, intro, center=True)
+    wait_for_key(['ENTER'])
+
+    return state
+
+def game_loop():
+    """Main game loop"""
+    global USE_COLOR
+
+    # Parse command line args
+    if "--no-color" in sys.argv:
+        USE_COLOR = False
+
+    if "--seed" in sys.argv:
+        idx = sys.argv.index("--seed")
+        if idx + 1 < len(sys.argv):
+            seed = int(sys.argv[idx + 1])
+            random.seed(seed)
+
+    state = None
+
+    try:
+        while True:
+            choice = show_main_menu(state or GameState())
+
+            if choice == 'N':
+                state = new_game()
+                show_map(state)
+
+            elif choice == 'L':
+                loaded = load_game()
+                if loaded:
+                    state = loaded
+                    animate_transition("Game loaded!")
+                    show_map(state)
+                else:
+                    animate_transition("No save file found!")
+
+            elif choice == 'E':
+                # Offer to save
+                if state and state.mode != "MENU":
+                    clear_screen()
+                    height, width = get_terminal_size()
+
+                    save_prompt = [
+                        "",
+                        "Save before exit?",
+                        "",
+                        colorize("Y", Color.GREEN) + ") Yes",
+                        colorize("N", Color.RED) + ") No",
+                        ""
+                    ]
+
+                    draw_panel(height // 2 - 3, save_prompt, center=True)
+
+                    save_choice = wait_for_key(['Y', 'N'])
+
+                    if save_choice == 'Y':
+                        if save_game(state):
+                            animate_transition("Game saved!")
+                        else:
+                            animate_transition("Save failed!")
+
+                clear_screen()
+                show_cursor()
+                print(colorize("Thanks for playing Terminal Heist!", Color.BRIGHT_CYAN))
+                break
+
+            time.sleep(0.1)
+
+    except KeyboardInterrupt:
+        clear_screen()
+        show_cursor()
+        print("\nGame interrupted. Goodbye!")
+    except Exception as e:
+        clear_screen()
+        show_cursor()
+        print(f"\nError: {e}")
+        import traceback
+        traceback.print_exc()
+
+# === ENTRY POINT ===
+
+if __name__ == "__main__":
+    try:
+        game_loop()
+    finally:
+        show_cursor()
+        print(Color.RESET)
