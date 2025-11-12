@@ -129,7 +129,7 @@ def get_terminal_size():
     return size.lines, size.columns
 
 def read_key() -> str:
-    """Read a single keypress (blocking)"""
+    """Read a single keypress (non-blocking)"""
     if sys.platform == "win32":
         import msvcrt
         if msvcrt.kbhit():
@@ -150,8 +150,45 @@ def read_key() -> str:
                 key = sys.stdin.read(1)
                 # Handle escape sequences
                 if key == '\x1b':
-                    if select.select([sys.stdin], [], [], 0.01)[0]:
+                    # Read rest of escape sequence if available
+                    if select.select([sys.stdin], [], [], 0.05)[0]:
                         key += sys.stdin.read(2)
+                return key.upper()
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return ""
+
+def read_key_blocking(timeout: float = 30.0) -> str:
+    """Read a single keypress (blocking with timeout)"""
+    if sys.platform == "win32":
+        import msvcrt
+        start = time.time()
+        while time.time() - start < timeout:
+            if msvcrt.kbhit():
+                key = msvcrt.getch()
+                return key.decode('utf-8', errors='ignore').upper()
+            time.sleep(0.01)
+        return ""
+    else:
+        import select
+        import tty
+        import termios
+
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            # Blocking read with timeout
+            if select.select([sys.stdin], [], [], timeout)[0]:
+                key = sys.stdin.read(1)
+                # Handle escape sequences
+                if key == '\x1b':
+                    if select.select([sys.stdin], [], [], 0.1)[0]:
+                        rest = sys.stdin.read(2)
+                        key += rest
+                    return 'ESC'
+                elif key == '\r' or key == '\n':
+                    return 'ENTER'
                 return key.upper()
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
@@ -160,20 +197,37 @@ def read_key() -> str:
 def wait_for_key(valid_keys: List[str] = None, timeout: float = None) -> str:
     """Wait for a specific key press"""
     start_time = time.time()
+
+    # Flush any pending input
+    if sys.platform != "win32":
+        import termios
+        termios.tcflush(sys.stdin, termios.TCIFLUSH)
+
     while True:
-        key = read_key()
+        # Use blocking read for better responsiveness
+        remaining = None
+        if timeout:
+            remaining = timeout - (time.time() - start_time)
+            if remaining <= 0:
+                return ""
+
+        key = read_key_blocking(timeout=remaining if remaining else 10.0)
+
         if key:
-            if key == '\x1b':  # ESC
+            # Normalize key
+            if key == 'ESC' or key == '\x1b' or key.startswith('\x1b'):
                 return 'ESC'
-            elif key == '\r' or key == '\n':
+            elif key == 'ENTER' or key == '\r' or key == '\n':
                 return 'ENTER'
-            elif valid_keys is None or key in valid_keys:
+
+            # Convert to uppercase for comparison
+            key = key.upper()
+
+            if valid_keys is None or key in valid_keys:
                 return key
 
-        if timeout and (time.time() - start_time > timeout):
+        if timeout and (time.time() - start_time >= timeout):
             return ""
-
-        time.sleep(0.05)
 
 # === DATA MODELS ===
 
@@ -1178,6 +1232,24 @@ def show_map(state: GameState):
     zones = create_city_zones()
     missions = create_missions()
 
+    # Show first-time hint
+    first_time = len(state.completed_missions) == 0
+    if first_time:
+        clear_screen()
+        hint = [
+            "",
+            colorize("=== QUICK START ===", Color.BRIGHT_CYAN),
+            "",
+            "You're at Downtown (D on the map).",
+            "Press ENTER to start your first mission!",
+            "",
+            colorize("Tip: WASD to move, Q to switch character, I for shop", Color.DIM),
+            "",
+            colorize("Press any key to continue", Color.YELLOW)
+        ]
+        draw_panel(height // 2 - 5, hint, center=True)
+        wait_for_key(timeout=10.0)
+
     while True:
         clear_screen()
         draw_hud(state)
@@ -1249,9 +1321,14 @@ def show_map(state: GameState):
 
         sys.stdout.flush()
 
-        # Input
+        # Input - use non-blocking for smooth map navigation
         key = read_key()
 
+        if not key:
+            time.sleep(0.05)
+            continue
+
+        # Handle movement
         if key == 'W' and state.map_cursor_y > 0:
             state.map_cursor_y -= 1
         elif key == 'S' and state.map_cursor_y < map_size - 1:
@@ -1260,17 +1337,25 @@ def show_map(state: GameState):
             state.map_cursor_x -= 1
         elif key == 'D' and state.map_cursor_x < map_size - 1:
             state.map_cursor_x += 1
-        elif key == 'ENTER' or key == '\r':
+
+        # Handle actions
+        elif key == '\r' or key == '\n' or key.upper() == 'ENTER':
             # Start mission if available
             if current_zone:
+                mission_started = False
                 for mission_id in current_zone.missions:
                     mission = next((m for m in missions if m.id == mission_id), None)
                     if mission and mission_id not in state.completed_missions:
                         if not mission.required_mission or mission.required_mission in state.completed_missions:
                             state.current_mission = mission_id
+                            animate_transition(f"Starting: {mission.name}")
                             start_mission(state, mission_id)
+                            mission_started = True
                             break
-        elif key == 'ESC' or key == '\x1b':
+                if not mission_started and current_zone:
+                    animate_transition("No missions available here!")
+
+        elif key == '\x1b' or key.startswith('\x1b') or key.upper() == 'ESC':
             break
         elif key == 'Q':
             try_character_switch(state)
@@ -1321,9 +1406,9 @@ def show_shop(state: GameState):
 
         draw_panel(5, shop_lines, center=True)
 
-        choice = wait_for_key(['1', '2', '3', '4', 'ESC', '\x1b'])
+        choice = wait_for_key(['1', '2', '3', '4'])
 
-        if choice in ['ESC', '\x1b']:
+        if choice == 'ESC' or choice == '\x1b' or not choice:
             break
 
         if choice in ['1', '2', '3', '4']:
@@ -1512,6 +1597,10 @@ def new_game() -> GameState:
     state.current_player = 0
     state.completed_missions = []
 
+    # Start at Downtown (where tutorial mission is)
+    state.map_cursor_x = 5
+    state.map_cursor_y = 5
+
     # Show intro
     height, width = get_terminal_size()
     clear_screen()
@@ -1527,6 +1616,8 @@ def new_game() -> GameState:
         colorize("REX", Color.YELLOW) + " - The Gunner (+15% damage)",
         "",
         "Build your crew, plan heists, get rich.",
+        "",
+        "Use WASD to move, ENTER to start missions.",
         "",
         colorize("Press ENTER to start", Color.DIM)
     ]
