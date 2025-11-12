@@ -875,7 +875,7 @@ def minigame_driving(state: GameState, duration: int = 15, difficulty: int = 1) 
             sys.stdout.flush()
 
             # Input
-            key = read_key()
+            key = read_key_blocking(timeout=0.1)
             if key == 'A' and player_lane > 0:
                 player_lane -= 1
             elif key == 'D' and player_lane < 2:
@@ -1499,9 +1499,9 @@ def minigame_pickpocket(state: GameState, targets: int = 5) -> bool:
             move_cursor(height // 2, width // 2 - 10)
             bar = "█" * int(elapsed / 3.0 * 20)
             print(colorize(bar, Color.YELLOW))
-            
+
             if not pressed_time:
-                key = read_key()
+                key = read_key_blocking(timeout=0.05)
                 if key == ' ':
                     pressed_time = elapsed
                     break
@@ -1626,8 +1626,8 @@ def minigame_motorcycle(state: GameState, duration: int = 15) -> bool:
             move_cursor(height - 1, 1)
             print(colorize("A/D=Lane | Keep moving!", Color.DIM))
             sys.stdout.flush()
-            
-            key = read_key()
+
+            key = read_key_blocking(timeout=0.1)
             if key == 'A' and player_lane > 0:
                 player_lane -= 1
             elif key == 'D' and player_lane < 2:
@@ -1840,8 +1840,8 @@ def minigame_helicopter(state: GameState, duration: int = 20) -> bool:
             move_cursor(height - 1, 1)
             print(colorize("W=Up | S=Down | Stay airborne!", Color.DIM))
             sys.stdout.flush()
-            
-            key = read_key()
+
+            key = read_key_blocking(timeout=0.1)
             if key == 'W' and heli_y > 3:
                 heli_y -= 1
             elif key == 'S' and heli_y < height - 3:
@@ -2581,7 +2581,7 @@ def mission_arcadia_heist(state: GameState) -> bool:
 
     if state.heist_plan == "stealth":
         animate_transition("Picking the vault lock...")
-        if minigame_lockpicking(state, complexity=6):
+        if minigame_lockpicking(state):
             success_count += 1
             animate_transition("Lock opened silently!")
         else:
@@ -2590,7 +2590,7 @@ def mission_arcadia_heist(state: GameState) -> bool:
 
     elif state.heist_plan == "loud":
         animate_transition("Cracking the vault safe...")
-        if minigame_safecracking(state, complexity=5):
+        if minigame_safecracking(state, difficulty=5):
             success_count += 1
             animate_transition("Vault cracked!")
         else:
@@ -2598,7 +2598,7 @@ def mission_arcadia_heist(state: GameState) -> bool:
 
     else:  # driver
         animate_transition("Using stolen keycard...")
-        if minigame_quick_time(state, presses=8, time_limit=10):
+        if minigame_quick_time(state, events=8):
             success_count += 1
             animate_transition("Quick swipe!")
         else:
@@ -2644,7 +2644,7 @@ def mission_arcadia_heist(state: GameState) -> bool:
     time.sleep(2)
 
     animate_transition("Loading cash into bags!")
-    if minigame_quick_time(state, presses=12, time_limit=15):
+    if minigame_quick_time(state, events=12):
         success_count += 1
         base_payout = int(base_payout * 1.3)
         animate_transition("Every last dollar!")
