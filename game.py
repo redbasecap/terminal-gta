@@ -2242,23 +2242,51 @@ def mission_recruit_crew(state: GameState) -> bool:
             f"Cost: {colorize(f'${crew.cost:,}', Color.YELLOW)}",
             "",
             "1) Recruit (pay upfront)",
-            "2) Skip",
+            "2) Prove yourself (free, but test required)",
+            "3) Skip",
             "",
             f"Your cash: {colorize(f'${state.cash:,}', Color.GREEN)}"
         ]
 
         draw_panel(5, crew_info, center=True)
-        choice = wait_for_key(['1', '2'])
+        choice = wait_for_key(['1', '2', '3'])
 
         if choice == '1' and state.cash >= crew.cost:
+            # Pay upfront
             state.cash -= crew.cost
             crew.recruited = True
             crew.loyalty = 60
             recruited_count += 1
-
             animate_transition(f"{crew.name} joined the crew!")
+
         elif choice == '1':
             animate_transition("Not enough cash!")
+
+        elif choice == '2':
+            # Prove yourself with a minigame!
+            animate_transition(f"{crew.name} wants to test your skills...")
+
+            test_passed = False
+            if crew.role == "gunner":
+                # Shooting test
+                animate_transition("Shooting test!")
+                test_passed = minigame_shooting(state, targets=8, time_limit=15)
+            elif crew.role == "hacker":
+                # Hacking test
+                animate_transition("Hacking test!")
+                test_passed = minigame_hacking(state, complexity=4)
+            else:  # driver
+                # Driving test
+                animate_transition("Driving test!")
+                test_passed = minigame_driving(state, duration=12, difficulty=2)
+
+            if test_passed:
+                crew.recruited = True
+                crew.loyalty = 80  # Higher loyalty for earning it!
+                recruited_count += 1
+                animate_transition(f"{crew.name} is impressed! Joined the crew!")
+            else:
+                animate_transition(f"{crew.name} is not convinced...")
 
     # Complete mission
     state.completed_missions.append("recruit_crew")
@@ -2506,51 +2534,149 @@ def mission_arcadia_heist(state: GameState) -> bool:
 
     animate_transition("Executing heist...")
 
-    success_stage_1 = False
-    success_stage_2 = False
+    success_count = 0
+    total_phases = 5
     base_payout = 100000
 
-    # Stage 1: Entry
-    if state.heist_plan == "stealth":
-        clear_screen()
-        draw_hud(state)
-        draw_panel(10, [colorize("Stage 1: Bypassing security...", Color.CYAN)], center=True)
-        time.sleep(2)
-        success_stage_1 = minigame_hacking(state, complexity=5)
-
-        if not success_stage_1:
-            state.heat = 5
-            base_payout //= 2
-            animate_transition("ALARM TRIGGERED!")
-        else:
-            state.heat = 1
-            base_payout = int(base_payout * 1.5)
-
-    elif state.heist_plan == "loud":
-        animate_transition("Stage 1: Breaching vault!")
-        state.heat = 5
-        success_stage_1 = True  # Always succeeds but high heat
-
-    else:  # driver
-        animate_transition("Stage 1: Creating diversion!")
-        state.heat = 3
-        success_stage_1 = True
-
-    # Stage 2: Escape
+    # === PHASE 1: INFILTRATION ===
     clear_screen()
     draw_hud(state)
-    draw_panel(10, [colorize("Stage 2: ESCAPE!", Color.BRIGHT_RED)], center=True)
+    draw_panel(10, [colorize("PHASE 1/5: INFILTRATION", Color.BRIGHT_CYAN)], center=True)
     time.sleep(2)
 
-    escape_duration = 20 if state.heat >= 4 else 15
-    success_stage_2 = minigame_driving(state, duration=escape_duration, difficulty=state.heat)
+    if state.heist_plan == "stealth":
+        animate_transition("Sneaking past security...")
+        if minigame_stealth(state, guards=5, duration=30):
+            success_count += 1
+            state.heat = 0
+            animate_transition("Silent as a ghost...")
+        else:
+            state.heat = 3
+            animate_transition("Guards spotted you!")
 
-    if not success_stage_2:
-        base_payout //= 3
-        state.players[state.current_player].hp = 30
+    elif state.heist_plan == "loud":
+        animate_transition("Storming the building!")
+        if minigame_shooting(state, targets=12, time_limit=25):
+            success_count += 1
+            state.heat = 5
+            animate_transition("Security neutralized!")
+        else:
+            state.heat = 5
+            base_payout //= 2
 
-    # Calculate final payout
+    else:  # driver
+        animate_transition("Creating diversion with getaway car...")
+        if minigame_driving(state, duration=15, difficulty=3):
+            success_count += 1
+            state.heat = 2
+            animate_transition("Perfect distraction!")
+        else:
+            state.heat = 4
+
+    # === PHASE 2: VAULT DOOR ===
+    clear_screen()
+    draw_hud(state)
+    draw_panel(10, [colorize("PHASE 2/5: VAULT DOOR", Color.BRIGHT_CYAN)], center=True)
+    time.sleep(2)
+
+    if state.heist_plan == "stealth":
+        animate_transition("Picking the vault lock...")
+        if minigame_lockpicking(state, complexity=6):
+            success_count += 1
+            animate_transition("Lock opened silently!")
+        else:
+            state.heat += 2
+            animate_transition("Fumbled the lock!")
+
+    elif state.heist_plan == "loud":
+        animate_transition("Cracking the vault safe...")
+        if minigame_safecracking(state, complexity=5):
+            success_count += 1
+            animate_transition("Vault cracked!")
+        else:
+            base_payout //= 2
+
+    else:  # driver
+        animate_transition("Using stolen keycard...")
+        if minigame_quick_time(state, presses=8, time_limit=10):
+            success_count += 1
+            animate_transition("Quick swipe!")
+        else:
+            state.heat += 1
+
+    # === PHASE 3: SECURITY SYSTEMS ===
+    clear_screen()
+    draw_hud(state)
+    draw_panel(10, [colorize("PHASE 3/5: SECURITY SYSTEMS", Color.BRIGHT_CYAN)], center=True)
+    time.sleep(2)
+
+    if state.heist_plan == "stealth":
+        animate_transition("Hacking security mainframe...")
+        if minigame_hacking(state, complexity=6):
+            success_count += 1
+            state.heat = max(0, state.heat - 1)
+            animate_transition("Systems offline!")
+        else:
+            state.heat += 3
+            animate_transition("ALARM TRIGGERED!")
+
+    elif state.heist_plan == "loud":
+        animate_transition("Disabling alarms...")
+        if minigame_alarm_disable(state, wires=6):
+            success_count += 1
+            state.heat = max(0, state.heat - 2)
+            animate_transition("Alarms silenced!")
+        else:
+            animate_transition("Alarms blaring!")
+
+    else:  # driver
+        animate_transition("Bypassing alarm system...")
+        if minigame_alarm_disable(state, wires=5):
+            success_count += 1
+            animate_transition("Clean bypass!")
+        else:
+            state.heat += 2
+
+    # === PHASE 4: GRAB THE LOOT ===
+    clear_screen()
+    draw_hud(state)
+    draw_panel(10, [colorize("PHASE 4/5: GRAB THE LOOT!", Color.BRIGHT_YELLOW)], center=True)
+    time.sleep(2)
+
+    animate_transition("Loading cash into bags!")
+    if minigame_quick_time(state, presses=12, time_limit=15):
+        success_count += 1
+        base_payout = int(base_payout * 1.3)
+        animate_transition("Every last dollar!")
+    else:
+        base_payout = int(base_payout * 0.8)
+        animate_transition("Left some behind...")
+
+    # === PHASE 5: ESCAPE ===
+    clear_screen()
+    draw_hud(state)
+    draw_panel(10, [colorize("PHASE 5/5: ESCAPE!", Color.BRIGHT_RED)], center=True)
+    time.sleep(2)
+
+    escape_duration = 25 if state.heat >= 4 else 18
+    if minigame_driving(state, duration=escape_duration, difficulty=min(5, state.heat + 1)):
+        success_count += 1
+        animate_transition("Clean getaway!")
+    else:
+        base_payout //= 2
+        state.players[state.current_player].hp = max(20, state.players[state.current_player].hp - 30)
+        animate_transition("Crashed but survived!")
+
+    # Calculate final payout based on performance
     final_payout = base_payout
+
+    # Bonus for perfect run
+    if success_count == total_phases:
+        final_payout = int(final_payout * 2.0)
+    elif success_count >= 4:
+        final_payout = int(final_payout * 1.5)
+    elif success_count >= 3:
+        final_payout = int(final_payout * 1.2)
 
     # Apply crew bonuses
     for crew in recruited_crew:
@@ -2565,16 +2691,32 @@ def mission_arcadia_heist(state: GameState) -> bool:
     clear_screen()
     draw_hud(state)
 
-    if success_stage_1 and success_stage_2:
+    if success_count == total_phases:
         result = [
             "",
-            colorize("╔═══════════════════════════╗", Color.BRIGHT_GREEN),
-            colorize("║  HEIST COMPLETE - FLAWLESS  ║", Color.BRIGHT_GREEN),
-            colorize("╚═══════════════════════════╝", Color.BRIGHT_GREEN),
+            colorize("╔════════════════════════════════╗", Color.BRIGHT_GREEN),
+            colorize("║  HEIST COMPLETE - FLAWLESS!  ║", Color.BRIGHT_GREEN),
+            colorize("╚════════════════════════════════╝", Color.BRIGHT_GREEN),
             "",
+            f"Phases Completed: {colorize(f'{success_count}/{total_phases}', Color.BRIGHT_GREEN)} (PERFECT!)",
             f"Total Payout: {colorize(f'${final_payout:,}', Color.BRIGHT_YELLOW)}",
             "",
             "You're a legend now.",
+            "The Arcadia Casino will never forget this day.",
+            "",
+            colorize("Press ENTER", Color.DIM)
+        ]
+    elif success_count >= 3:
+        result = [
+            "",
+            colorize("╔══════════════════════════╗", Color.BRIGHT_CYAN),
+            colorize("║  HEIST COMPLETE - SUCCESS  ║", Color.BRIGHT_CYAN),
+            colorize("╚══════════════════════════╝", Color.BRIGHT_CYAN),
+            "",
+            f"Phases Completed: {colorize(f'{success_count}/{total_phases}', Color.CYAN)}",
+            f"Payout: {colorize(f'${final_payout:,}', Color.BRIGHT_YELLOW)}",
+            "",
+            "Not bad. You got the job done.",
             "",
             colorize("Press ENTER", Color.DIM)
         ]
@@ -2583,9 +2725,11 @@ def mission_arcadia_heist(state: GameState) -> bool:
             "",
             colorize("HEIST COMPLETE - MESSY", Color.YELLOW),
             "",
+            f"Phases Completed: {colorize(f'{success_count}/{total_phases}', Color.YELLOW)}",
             f"Payout: {colorize(f'${final_payout:,}', Color.YELLOW)}",
             "",
             "You got away... barely.",
+            "Might want to practice more.",
             "",
             colorize("Press ENTER", Color.DIM)
         ]
@@ -2759,7 +2903,30 @@ def mission_armory_heist(state: GameState) -> bool:
     # Lockpicking
     if minigame_lockpicking(state):
         payout += 10000
-    
+        animate_transition("Vault unlocked!")
+    else:
+        animate_transition("Forced the lock - bomb activated!")
+        state.heat += 2
+
+    # Bomb defusal (security measure)
+    animate_transition("WARNING: Security bomb detected!")
+    clear_screen()
+    draw_hud(state)
+    draw_panel(10, [
+        colorize("⚠ SECURITY BOMB ACTIVE ⚠", Color.BRIGHT_RED),
+        "",
+        "Defuse it or lose the weapons!"
+    ], center=True)
+    time.sleep(2)
+
+    if minigame_bomb_defusal(state):
+        payout += 15000
+        animate_transition("Bomb defused! All weapons secured!")
+    else:
+        payout = payout // 3
+        state.heat += 3
+        animate_transition("EXPLOSION! Lost most of the weapons!")
+
     # Combat escape
     if state.heat >= 4:
         animate_transition("GUARDS INCOMING!")
@@ -3030,7 +3197,25 @@ def mission_corrupt_cop(state: GameState) -> bool:
             state.players[state.current_player].hp -= 25
             animate_transition("Cop fought back!")
             return False
-    
+
+    # Interrogate for intel (always happens)
+    animate_transition("Now let's get some information...")
+    clear_screen()
+    draw_hud(state)
+    draw_panel(10, [
+        colorize("INTERROGATION", Color.BRIGHT_YELLOW),
+        "",
+        "Extract intel about police operations!"
+    ], center=True)
+    time.sleep(2)
+
+    if minigame_interrogation(state):
+        payout += 20000
+        state.heat = max(0, state.heat - 2)
+        animate_transition("Got valuable police intel!")
+    else:
+        animate_transition("Cop stayed quiet... for now.")
+
     state.cash += payout
     state.completed_missions.append("corrupt_cop")
     
@@ -3090,13 +3275,29 @@ def mission_escape_prison(state: GameState) -> bool:
     
     # Phase 3: Break out
     animate_transition("Freeing prisoner...")
-    
+
     if minigame_lockpicking(state):
         animate_transition("They're free!")
     else:
         state.heat += 3
         animate_transition("Alarm triggered!")
-    
+
+    # Phase 3.5: Climb the prison wall
+    animate_transition("Scaling the outer wall...")
+    clear_screen()
+    draw_hud(state)
+    draw_panel(10, [
+        colorize("CLIMB THE WALL!", Color.BRIGHT_CYAN),
+        "",
+        "Guards are searching. Climb fast!"
+    ], center=True)
+    time.sleep(2)
+
+    if not minigame_climbing(state, height_to_climb=8):
+        state.heat += 4
+        animate_transition("Spotted while climbing!")
+        state.players[state.current_player].hp -= 20
+
     # Phase 4: Escape
     if minigame_driving(state, duration=25, difficulty=5):
         payout = 20000
@@ -3219,22 +3420,44 @@ def mission_smuggling(state: GameState) -> bool:
     
     for checkpoint in range(total_checkpoints):
         animate_transition(f"Checkpoint {checkpoint + 1}/{total_checkpoints}...")
-        
+
         # Random encounter
-        if random.random() < 0.5:
+        encounter_type = random.random()
+
+        if encounter_type < 0.33:
             animate_transition("POLICE CHECKPOINT!")
-            
+
             if minigame_disguise(state):
                 checkpoints_passed += 1
             else:
                 state.heat += 2
-                
+
                 # Chase
                 if minigame_driving(state, duration=15, difficulty=3):
                     checkpoints_passed += 1
                 else:
                     state.heat += 2
                     break
+
+        elif encounter_type < 0.66:
+            # Water crossing alternative route
+            animate_transition("Roadblock ahead! River route available...")
+            clear_screen()
+            draw_hud(state)
+            draw_panel(10, [
+                colorize("SWIM ACROSS THE RIVER!", Color.BRIGHT_CYAN),
+                "",
+                "Cargo is waterproof. You swim, goods float!"
+            ], center=True)
+            time.sleep(2)
+
+            if minigame_swimming(state, distance=10):
+                checkpoints_passed += 1
+                animate_transition("Made it across!")
+            else:
+                state.heat += 1
+                animate_transition("Lost some cargo in the water...")
+
         else:
             checkpoints_passed += 1
             animate_transition("Clear!")
@@ -3433,8 +3656,8 @@ def mission_final_showdown(state: GameState) -> bool:
     
     payout = 200000
     phases_completed = 0
-    total_phases = 6
-    
+    total_phases = 8  # Increased from 6 to 8
+
     # Phase 1: Infiltration
     animate_transition("Phase 1: Infiltration")
     if minigame_disguise(state):
@@ -3442,7 +3665,7 @@ def mission_final_showdown(state: GameState) -> bool:
         payout += 50000
     else:
         state.heat += 2
-    
+
     # Phase 2: Hacking
     animate_transition("Phase 2: Security Systems")
     if minigame_hacking(state, complexity=5):
@@ -3450,7 +3673,7 @@ def mission_final_showdown(state: GameState) -> bool:
         payout += 50000
     else:
         state.heat += 2
-    
+
     # Phase 3: Combat
     animate_transition("Phase 3: Hostile Contact!")
     if minigame_shooting(state, targets=20, time_limit=30):
@@ -3458,25 +3681,65 @@ def mission_final_showdown(state: GameState) -> bool:
         payout += 50000
     else:
         state.players[state.current_player].hp -= 30
-    
-    # Phase 4: Vault
-    animate_transition("Phase 4: The Vault")
+
+    # Phase 4: Sniper Cover
+    animate_transition("Phase 4: Sniper Overwatch")
+    clear_screen()
+    draw_hud(state)
+    draw_panel(10, [
+        colorize("PROVIDE SNIPER COVER!", Color.BRIGHT_RED),
+        "",
+        "Your crew needs cover fire to advance!"
+    ], center=True)
+    time.sleep(2)
+
+    if minigame_sniper(state, targets=8):
+        phases_completed += 1
+        payout += 75000
+        animate_transition("Perfect cover! Crew advancing!")
+    else:
+        state.heat += 2
+        animate_transition("Crew pinned down!")
+
+    # Phase 5: Vault
+    animate_transition("Phase 5: The Vault")
     if minigame_safecracking(state, difficulty=5):
         phases_completed += 1
         payout += 100000
     else:
         state.heat += 3
-    
-    # Phase 5: Extraction
-    animate_transition("Phase 5: Escape Route")
+
+    # Phase 6: Extraction
+    animate_transition("Phase 6: Escape Route")
     if minigame_escape_building(state):
         phases_completed += 1
         payout += 50000
     else:
         state.heat += 2
-    
-    # Phase 6: Final Chase
-    animate_transition("Phase 6: THE ENTIRE CITY IS AFTER YOU!")
+
+    # Phase 7: Helicopter Extraction
+    animate_transition("Phase 7: HELICOPTER EXTRACTION!")
+    clear_screen()
+    draw_hud(state)
+    draw_panel(10, [
+        colorize("FLY THE CHOPPER!", Color.BRIGHT_CYAN),
+        "",
+        "Navigate through the city to the safehouse!",
+        "Military and police helicopters in pursuit!"
+    ], center=True)
+    time.sleep(2)
+
+    if minigame_helicopter(state, duration=25):
+        phases_completed += 1
+        payout += 100000
+        animate_transition("Chopper landed safely!")
+    else:
+        state.heat += 3
+        payout = int(payout * 0.8)
+        animate_transition("Rough landing! Had to bail!")
+
+    # Phase 8: Final Chase
+    animate_transition("Phase 8: THE ENTIRE CITY IS AFTER YOU!")
     state.heat = 5
     
     if minigame_driving(state, duration=30, difficulty=5):
